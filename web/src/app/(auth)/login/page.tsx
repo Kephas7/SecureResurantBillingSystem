@@ -1,17 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import HCaptcha from "@hcaptcha/react-hcaptcha";
 import { useAuth } from "../../../context/auth.context";
 import { loginSchema, type LoginFormData } from "../../../lib/validations/auth.schemas";
+
+const CAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_CAPTCHA_SITE_KEY;
 
 export default function LoginPage(): JSX.Element {
   const router = useRouter();
   const { login } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<HCaptcha>(null);
 
   const {
     register,
@@ -27,12 +32,20 @@ export default function LoginPage(): JSX.Element {
   async function onSubmit(data: LoginFormData): Promise<void> {
     setServerError(null);
     try {
-      const { requiresMfa } = await login(data.email, data.password);
+      const { requiresMfa } = await login(data.email, data.password, captchaToken ?? undefined);
       router.push(requiresMfa ? "/mfa-verify" : "/dashboard");
     } catch (err) {
       setServerError(err instanceof Error ? err.message : "Login failed");
+      // A captcha token is single-use - reset the widget so the user can
+      // solve a fresh challenge on retry instead of resubmitting a token
+      // the server will reject.
+      captchaRef.current?.resetCaptcha();
+      setCaptchaToken(null);
     }
   }
+
+  const captchaRequired = Boolean(CAPTCHA_SITE_KEY);
+  const submitDisabled = isSubmitting || (captchaRequired && !captchaToken);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -54,9 +67,21 @@ export default function LoginPage(): JSX.Element {
         {errors.password && <p className="error-msg">{errors.password.message}</p>}
       </div>
 
+      {/* Renders nothing when NEXT_PUBLIC_CAPTCHA_SITE_KEY isn't set, so
+          local/dev testing is never blocked by a live challenge - matches
+          the server-side dev bypass in AuthService.verifyCaptcha(). */}
+      {CAPTCHA_SITE_KEY && (
+        <HCaptcha
+          ref={captchaRef}
+          sitekey={CAPTCHA_SITE_KEY}
+          onVerify={(token) => setCaptchaToken(token)}
+          onExpire={() => setCaptchaToken(null)}
+        />
+      )}
+
       {serverError && <p className="error-msg">{serverError}</p>}
 
-      <button type="submit" disabled={isSubmitting} style={{ width: "100%" }}>
+      <button type="submit" disabled={submitDisabled} style={{ width: "100%" }}>
         {isSubmitting ? "Signing in..." : "Login"}
       </button>
 

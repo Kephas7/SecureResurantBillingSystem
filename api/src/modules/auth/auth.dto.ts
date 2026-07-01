@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
 
 // Password max length is capped at 72 bytes because Argon2/bcrypt silently
 // truncate input beyond that point - without this check a user could set a
@@ -41,6 +41,10 @@ export class LoginDto {
   @IsNotEmpty()
   @MaxLength(PASSWORD_MAX_LENGTH)
   password!: string;
+
+  @IsOptional()
+  @IsString()
+  captchaToken?: string;
 }
 
 export class ChangePasswordDto {

@@ -91,6 +91,19 @@ export class AuthService {
     dto: LoginDto,
     ipAddress: string,
   ): Promise<{ userId: string; requiresMfa: boolean; role: string }> {
+    const captchaSecret = process.env.CAPTCHA_SECRET_KEY;
+
+    if (captchaSecret) {
+      if (!dto.captchaToken) {
+        throw new BadRequestException('CAPTCHA token required');
+      }
+
+      const captchaValid = await this.verifyCaptcha(dto.captchaToken);
+      if (!captchaValid) {
+        throw new BadRequestException('CAPTCHA verification failed');
+      }
+    }
+
     const email = dto.email.toLowerCase();
 
     const user = await this.prisma.user.findUnique({
@@ -233,6 +246,35 @@ export class AuthService {
     await this.writeAuditLog(userId, valid ? 'MFA_VERIFIED' : 'MFA_FAILED', 'User', userId);
 
     return valid;
+  }
+
+  // CAPTCHA is a secondary brute-force defence layered behind rate
+  // limiting - it targets scripted credential-stuffing/account-creation
+  // tools that rotate IPs to dodge the throttler (OWASP Automated Threats
+  // to Web Applications: OAT-019 Account Creation, OAT-007 Credential
+  // Cracking). Bypassed in development (no secret key configured) so
+  // local testing isn't blocked by a real hCaptcha challenge; in
+  // production both CAPTCHA_SITE_KEY (frontend widget) and
+  // CAPTCHA_SECRET_KEY (this server-side check) must be set together.
+  async verifyCaptcha(token: string): Promise<boolean> {
+    const secret = process.env.CAPTCHA_SECRET_KEY;
+    if (!secret) {
+      return true;
+    }
+
+    try {
+      const response = await fetch('https://hcaptcha.com/siteverify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ secret, response: token }).toString(),
+      });
+
+      const result = (await response.json()) as { success: boolean };
+      return result.success;
+    } catch (err: unknown) {
+      this.logger.error(`CAPTCHA verification request failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
   }
 
   // Argon2id chosen per OWASP Password Storage Cheat Sheet (2024): it is

@@ -16,7 +16,7 @@ export interface User {
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ requiresMfa: boolean }>;
+  login: (email: string, password: string, captchaToken?: string) => Promise<{ requiresMfa: boolean }>;
   logout: () => Promise<void>;
   setUser: (user: User | null) => void;
 }
@@ -47,8 +47,12 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       .finally(() => setIsLoading(false));
   }, []);
 
-  async function login(email: string, password: string): Promise<{ requiresMfa: boolean }> {
-    const result = await authApi.login(email, password);
+  async function login(
+    email: string,
+    password: string,
+    captchaToken?: string,
+  ): Promise<{ requiresMfa: boolean }> {
+    const result = await authApi.login(email, password, captchaToken);
 
     if (!result.requiresMfa) {
       const me = await authApi.me();
