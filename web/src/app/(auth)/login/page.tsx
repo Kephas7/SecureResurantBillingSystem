@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
@@ -11,7 +11,15 @@ import { loginSchema, type LoginFormData } from "../../../lib/validations/auth.s
 
 const CAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_CAPTCHA_SITE_KEY;
 
-export default function LoginPage(): JSX.Element {
+function ResetSuccessBanner(): JSX.Element | null {
+  const searchParams = useSearchParams();
+  if (searchParams.get("reset") !== "success") {
+    return null;
+  }
+  return <p className="success-msg">Password reset successfully. Please log in with your new password.</p>;
+}
+
+function LoginForm(): JSX.Element {
   const router = useRouter();
   const { login } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -49,6 +57,10 @@ export default function LoginPage(): JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <Suspense fallback={null}>
+        <ResetSuccessBanner />
+      </Suspense>
+
       <div>
         <label htmlFor="email">Email</label>
         <input id="email" type="email" autoComplete="username" {...register("email")} style={{ width: "100%" }} />
@@ -93,4 +105,8 @@ export default function LoginPage(): JSX.Element {
       </p>
     </form>
   );
+}
+
+export default function LoginPage(): JSX.Element {
+  return <LoginForm />;
 }
