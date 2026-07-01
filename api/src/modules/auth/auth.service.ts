@@ -1,0 +1,304 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
+import * as argon2 from 'argon2';
+import { authenticator } from 'otplib';
+import * as qrcode from 'qrcode';
+import * as crypto from 'crypto';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { ChangePasswordDto, LoginDto, RegisterDto } from './auth.dto';
+
+// Max failed attempts before an account is temporarily locked. OWASP ASVS
+// V2.2.1 recommends locking or heavily throttling after a small, fixed
+// number of consecutive failures to blunt online brute-force/credential-
+// stuffing attacks without permanently locking users out on a typo.
+const MAX_FAILED_ATTEMPTS = 5;
+
+// Lockout duration once MAX_FAILED_ATTEMPTS is reached. Long enough to make
+// brute-forcing impractical, short enough that a legitimate user isn't
+// stuck waiting on support to unlock their own account.
+const LOCKOUT_MINUTES = 15;
+
+// Number of previous password hashes checked to block re-use (NIST SP
+// 800-63B discourages allowing recently-used passwords).
+const PASSWORD_HISTORY_LIMIT = 5;
+
+// Default role assigned to accounts created via register() when no more
+// specific role is supplied. Looked up by name (never a hardcoded UUID) so
+// it stays correct across environments/reseeds.
+const DEFAULT_ROLE_NAME = 'WAITER';
+
+// A syntactically-valid argon2id hash with no corresponding real password.
+// Used to burn CPU time on unknown-email login attempts so that the
+// response timing for "no such user" matches "wrong password" - otherwise
+// an attacker could enumerate valid emails by measuring response latency.
+const DUMMY_ARGON2_HASH =
+  '$argon2id$v=19$m=19456,t=2,p=1$XyHKupWCz47ORMWta9N93Q$DbwCxK52Y1kaEhxQHkmC1MAcgG3/6SihMdFHMh1qC6s';
+
+@Injectable()
+export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  async register(dto: RegisterDto): Promise<{ id: string; email: string }> {
+    const email = dto.email.toLowerCase();
+
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      throw new ConflictException('An account with this email already exists');
+    }
+
+    const role = await this.prisma.role.findUnique({ where: { name: DEFAULT_ROLE_NAME } });
+    if (!role) {
+      throw new BadRequestException(`Default role "${DEFAULT_ROLE_NAME}" is not configured`);
+    }
+
+    const passwordHash = await this.hashPassword(dto.password);
+
+    const user = await this.prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        passwordHistory: [passwordHash],
+        fullName: dto.fullName,
+        roleId: role.id,
+      },
+    });
+
+    await this.writeAuditLog(user.id, 'USER_REGISTERED', 'User', user.id);
+
+    return { id: user.id, email: user.email };
+  }
+
+  async login(
+    dto: LoginDto,
+    ipAddress: string,
+  ): Promise<{ userId: string; requiresMfa: boolean; role: string }> {
+    const email = dto.email.toLowerCase();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: { role: true },
+    });
+
+    if (!user) {
+      // Timing-attack mitigation: always pay the cost of an argon2.verify()
+      // call, even when there is no user to check against, so that
+      // "unknown email" and "wrong password" take statistically the same
+      // amount of time and can't be used to enumerate valid accounts.
+      await argon2.verify(DUMMY_ARGON2_HASH, dto.password).catch(() => false);
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+      const minutesRemaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      throw new ForbiddenException(`Account is locked. Try again in ${minutesRemaining} minute(s)`);
+    }
+
+    if (!user.isActive) {
+      throw new ForbiddenException('Account is disabled');
+    }
+
+    const valid = await argon2.verify(user.passwordHash, dto.password);
+
+    if (!valid) {
+      await this.handleFailedLogin(user.id, ipAddress);
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+
+    await this.writeAuditLog(user.id, 'LOGIN_SUCCESS', 'User', user.id, { ip: ipAddress });
+
+    return { userId: user.id, requiresMfa: user.mfaEnabled, role: user.role.name };
+  }
+
+  async logout(userId: string): Promise<void> {
+    await this.writeAuditLog(userId, 'LOGOUT', 'User', userId);
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('Authentication required');
+    }
+
+    const valid = await argon2.verify(user.passwordHash, dto.currentPassword);
+    if (!valid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    await this.assertNotRecentPassword(dto.newPassword, user.passwordHistory);
+
+    const newHash = await this.hashPassword(dto.newPassword);
+    const passwordHistory = [newHash, ...user.passwordHistory].slice(0, PASSWORD_HISTORY_LIMIT);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: newHash,
+        passwordHistory,
+        passwordChangedAt: new Date(),
+      },
+    });
+
+    await this.writeAuditLog(userId, 'PASSWORD_CHANGED', 'User', userId);
+  }
+
+  async setupMfa(userId: string): Promise<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('Authentication required');
+    }
+
+    const secret = authenticator.generateSecret();
+    const otpauthUrl = authenticator.keyuri(user.email, process.env.MFA_ISSUER ?? 'RestaurantSecure', secret);
+    const qrCodeDataUrl = await qrcode.toDataURL(otpauthUrl);
+
+    // Secret is intentionally not persisted here - it's only saved once the
+    // user proves possession of it via verifyAndEnableMfa(), so an
+    // abandoned setup flow never leaves a usable-but-unconfirmed secret
+    // sitting on the account.
+    return { secret, otpauthUrl, qrCodeDataUrl };
+  }
+
+  async verifyAndEnableMfa(userId: string, token: string, secret: string): Promise<void> {
+    const valid = authenticator.verify({ token, secret });
+    if (!valid) {
+      throw new BadRequestException('Invalid MFA token');
+    }
+
+    const mfaSecretEnc = this.encryptSecret(secret);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaEnabled: true, mfaSecretEnc },
+    });
+
+    await this.writeAuditLog(userId, 'MFA_ENABLED', 'User', userId);
+  }
+
+  async verifyMfaToken(userId: string, token: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.mfaSecretEnc) {
+      await this.writeAuditLog(userId, 'MFA_FAILED', 'User', userId);
+      return false;
+    }
+
+    const secret = this.decryptSecret(user.mfaSecretEnc);
+    const valid = authenticator.verify({ token, secret });
+
+    await this.writeAuditLog(userId, valid ? 'MFA_VERIFIED' : 'MFA_FAILED', 'User', userId);
+
+    return valid;
+  }
+
+  // Argon2id chosen per OWASP Password Storage Cheat Sheet (2024): it is
+  // memory-hard (resists GPU/ASIC cracking farms) and the "id" variant
+  // combines resistance to both side-channel timing attacks (like
+  // argon2i) and GPU cracking (like argon2d). Parameters below meet or
+  // exceed OWASP's minimum recommended values and are tunable per
+  // environment via env vars without a code change.
+  private async hashPassword(password: string): Promise<string> {
+    return argon2.hash(password, {
+      type: argon2.argon2id,
+      memoryCost: Number(process.env.ARGON2_MEMORY_COST ?? 19456),
+      timeCost: Number(process.env.ARGON2_TIME_COST ?? 2),
+      parallelism: Number(process.env.ARGON2_PARALLELISM ?? 1),
+    });
+  }
+
+  private async assertNotRecentPassword(newPassword: string, history: string[]): Promise<void> {
+    for (const previousHash of history) {
+      const matches = await argon2.verify(previousHash, newPassword).catch(() => false);
+      if (matches) {
+        throw new BadRequestException(
+          `New password must not match any of your last ${PASSWORD_HISTORY_LIMIT} passwords`,
+        );
+      }
+    }
+  }
+
+  private async handleFailedLogin(userId: string, ipAddress: string): Promise<void> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: { increment: 1 } },
+    });
+
+    await this.writeAuditLog(userId, 'LOGIN_FAILED', 'User', userId, {
+      attempts: user.failedLoginAttempts,
+      ip: ipAddress,
+    });
+
+    if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
+      const lockedUntil = new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000);
+
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lockedUntil },
+      });
+
+      await this.writeAuditLog(userId, 'ACCOUNT_LOCKED', 'User', userId, { ip: ipAddress });
+
+      this.logger.warn(`Account ${userId} locked until ${lockedUntil.toISOString()} after repeated failed logins`);
+    }
+  }
+
+  private async writeAuditLog(
+    actorId: string | null,
+    action: string,
+    resource?: string,
+    resourceId?: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          actorId,
+          action,
+          resource,
+          resourceId,
+          metadata: metadata as Prisma.InputJsonValue | undefined,
+        },
+      });
+    } catch (err: unknown) {
+      this.logger.error(
+        `Failed to write audit log for action "${action}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  // AES-256-CBC with a key derived from SESSION_SECRET via scrypt.
+  // Key management note: in this coursework deployment the encryption key
+  // is derived from the same secret used to sign sessions, which is
+  // acceptable for a single-instance demo but not for production - a real
+  // deployment should use a dedicated key from a managed secret store
+  // (e.g. AWS KMS/Vault) so that rotating the session secret doesn't also
+  // invalidate every stored MFA secret.
+  private encryptSecret(plaintext: string): string {
+    const key = crypto.scryptSync(process.env.SESSION_SECRET as string, 'mfa-secret-salt', 32);
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+    return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
+  }
+
+  private decryptSecret(encrypted: string): string {
+    const [ivHex, dataHex] = encrypted.split(':');
+    const key = crypto.scryptSync(process.env.SESSION_SECRET as string, 'mfa-secret-salt', 32);
+    const iv = Buffer.from(ivHex, 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    const decrypted = Buffer.concat([decipher.update(Buffer.from(dataHex, 'hex')), decipher.final()]);
+    return decrypted.toString('utf8');
+  }
+}
