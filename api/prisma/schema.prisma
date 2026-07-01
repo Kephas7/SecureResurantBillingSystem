@@ -70,6 +70,23 @@ model User {
   refundsApproved RefundRequest[] @relation("RefundApprovedBy")
   auditLogs       AuditLog[]
   tableAssignments TableAssignment[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+// Short-lived, single-use tokens for the "forgot password" flow. Only the
+// SHA-256 hash of the token is ever stored - same principle as password
+// hashing, so a database breach doesn't hand out valid reset tokens.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tokenHash])
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------

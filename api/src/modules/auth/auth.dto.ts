@@ -67,3 +67,23 @@ export class VerifyMfaDto {
   @Matches(/^\d{6}$/)
   token!: string;
 }
+
+export class RequestPasswordResetDto {
+  @IsEmail()
+  @MaxLength(254)
+  email!: string;
+}
+
+export class ResetPasswordDto {
+  @IsString()
+  @IsNotEmpty()
+  token!: string;
+
+  @IsString()
+  @MinLength(12)
+  @MaxLength(PASSWORD_MAX_LENGTH)
+  @Matches(PASSWORD_COMPLEXITY_REGEX, {
+    message: 'newPassword must contain an uppercase letter, a lowercase letter, a digit, and a special character',
+  })
+  newPassword!: string;
+}

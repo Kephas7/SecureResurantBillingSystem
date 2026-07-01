@@ -5,7 +5,14 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Public } from '../../common/guards/session.guard';
 import { AuthService, SafeUser } from './auth.service';
-import { ChangePasswordDto, LoginDto, RegisterDto, VerifyMfaDto } from './auth.dto';
+import {
+  ChangePasswordDto,
+  LoginDto,
+  RegisterDto,
+  RequestPasswordResetDto,
+  ResetPasswordDto,
+  VerifyMfaDto,
+} from './auth.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -143,5 +150,27 @@ export class AuthController {
     req.session.mfaVerified = true;
 
     return { message: 'MFA verified' };
+  }
+
+  @Public()
+  // Tight limit: this endpoint is the entry point to enumeration/abuse of
+  // the reset flow, so it gets the strictest budget of any public route.
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('request-password-reset')
+  async requestPasswordReset(@Body() dto: RequestPasswordResetDto): Promise<{ message: string }> {
+    await this.authService.requestPasswordReset(dto.email);
+    // Always the same response regardless of whether the email exists -
+    // see AuthService.requestPasswordReset for the enumeration rationale.
+    return { message: 'If that email address is registered, you will receive a password reset link shortly.' };
+  }
+
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('reset-password')
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {
+    await this.authService.resetPassword(dto.token, dto.newPassword);
+    return { message: 'Password reset successfully' };
   }
 }

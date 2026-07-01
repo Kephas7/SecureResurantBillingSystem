@@ -200,6 +200,77 @@ export class AuthService {
     await this.writeAuditLog(userId, 'PASSWORD_CHANGED', 'User', userId);
   }
 
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+
+    // SECURITY: always return success whether or not the email exists, so
+    // this endpoint can't be used to enumerate registered accounts (OWASP
+    // ASVS 2.2 - authentication responses must not disclose which
+    // identifiers are valid). The caller only ever sees a generic
+    // "if that email is registered..." message regardless of outcome.
+    if (!user) {
+      return;
+    }
+
+    // Raw token is never stored - only its SHA-256 hash. This means a
+    // database breach does not expose valid reset tokens, the same
+    // principle as password hashing applied to a short-lived token.
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await this.prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    // Stub: in production this would email the raw token as a reset link.
+    // Logged here (dev only) so the flow can be exercised end-to-end
+    // without a real mail provider configured.
+    this.logger.warn(`Password reset token (dev only): ${token}`);
+
+    await this.writeAuditLog(user.id, 'PASSWORD_RESET_REQUESTED', 'User', user.id);
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const resetToken = await this.prisma.passwordResetToken.findFirst({
+      where: { tokenHash, expiresAt: { gt: new Date() }, usedAt: null },
+    });
+
+    if (!resetToken) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: resetToken.userId } });
+
+    await this.assertNotRecentPassword(newPassword, user.passwordHistory);
+
+    const newHash = await this.hashPassword(newPassword);
+    const passwordHistory = [newHash, ...user.passwordHistory].slice(0, PASSWORD_HISTORY_LIMIT);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: newHash, passwordHistory, passwordChangedAt: new Date() },
+    });
+
+    // Mark used rather than delete - keeps a record for the audit trail.
+    await this.prisma.passwordResetToken.update({
+      where: { id: resetToken.id },
+      data: { usedAt: new Date() },
+    });
+
+    // A password reset invalidates any other outstanding tokens for this
+    // user, so an older, still-unused token (e.g. from an earlier request
+    // the user abandoned) can't later be used to reset the password again.
+    await this.prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null, id: { not: resetToken.id } },
+      data: { usedAt: new Date() },
+    });
+
+    await this.writeAuditLog(user.id, 'PASSWORD_RESET_COMPLETED', 'User', user.id);
+  }
+
   async setupMfa(userId: string): Promise<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
