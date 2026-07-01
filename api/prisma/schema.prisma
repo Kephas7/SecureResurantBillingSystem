@@ -1,0 +1,280 @@
+// Prisma schema for the Secure Restaurant Billing & Management System
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth / RBAC
+// ---------------------------------------------------------------------------
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique // e.g. ADMIN, MANAGER, CASHIER, WAITER, KITCHEN
+  description String?
+  permissions RolePermission[]
+  users       User[]
+  createdAt   DateTime         @default(now())
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  // resource:action convention, e.g. "orders:create", "invoices:refund"
+  key         String           @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String
+  // tracks last N password hashes (JSON array) to prevent reuse - never store plaintext
+  passwordHistory   String[]  @default([])
+  passwordChangedAt DateTime  @default(now())
+
+  fullName  String
+  isActive  Boolean  @default(true)
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id])
+
+  // MFA
+  mfaEnabled    Boolean @default(false)
+  mfaSecretEnc  String? // encrypted at rest (AES), never plaintext
+
+  // Brute-force protection
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  // Audit
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ordersCreated   Order[]        @relation("OrderCreatedBy")
+  invoicesCreated Invoice[]      @relation("InvoiceCreatedBy")
+  refundsApproved RefundRequest[] @relation("RefundApprovedBy")
+  auditLogs       AuditLog[]
+  tableAssignments TableAssignment[]
+}
+
+// ---------------------------------------------------------------------------
+// Restaurant management
+// ---------------------------------------------------------------------------
+
+model RestaurantTable {
+  id          String   @id @default(uuid())
+  number      Int      @unique
+  capacity    Int
+  status      TableStatus @default(AVAILABLE)
+  orders      Order[]
+  assignments TableAssignment[]
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  OUT_OF_SERVICE
+}
+
+model TableAssignment {
+  id        String          @id @default(uuid())
+  tableId   String
+  table     RestaurantTable @relation(fields: [tableId], references: [id])
+  waiterId  String
+  waiter    User            @relation(fields: [waiterId], references: [id])
+  assignedAt DateTime       @default(now())
+  releasedAt DateTime?
+}
+
+model MenuCategory {
+  id    String     @id @default(uuid())
+  name  String      @unique
+  items MenuItem[]
+}
+
+model MenuItem {
+  id          String        @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal       @db.Decimal(10, 2)
+  isAvailable Boolean       @default(true)
+  categoryId  String
+  category    MenuCategory  @relation(fields: [categoryId], references: [id])
+  ingredients MenuItemIngredient[]
+  orderItems  OrderItem[]
+}
+
+model Supplier {
+  id          String          @id @default(uuid())
+  name        String
+  contactInfo String?
+  ingredients Ingredient[]
+}
+
+model Ingredient {
+  id              String   @id @default(uuid())
+  name            String
+  stockQuantity   Decimal  @db.Decimal(10, 2)
+  unit            String   // e.g. kg, litre, unit
+  lowStockThreshold Decimal @db.Decimal(10, 2)
+  supplierId      String?
+  supplier        Supplier? @relation(fields: [supplierId], references: [id])
+  menuItems       MenuItemIngredient[]
+  updatedAt       DateTime @updatedAt
+}
+
+model MenuItemIngredient {
+  menuItemId   String
+  ingredientId String
+  quantityUsed Decimal    @db.Decimal(10, 2)
+  menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@id([menuItemId, ingredientId])
+}
+
+// ---------------------------------------------------------------------------
+// Orders
+// ---------------------------------------------------------------------------
+
+model Order {
+  id          String      @id @default(uuid())
+  tableId     String
+  table       RestaurantTable @relation(fields: [tableId], references: [id])
+  createdById String
+  createdBy   User        @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  status      OrderStatus @default(OPEN)
+  items       OrderItem[]
+  invoice     Invoice?
+  statusHistory OrderStatusHistory[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+enum OrderStatus {
+  OPEN
+  SENT_TO_KITCHEN
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+  BILLED
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus
+  toStatus   OrderStatus
+  changedAt  DateTime   @default(now())
+  changedById String?
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId  String
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(10, 2) // snapshot of price at order time
+  notes       String?
+}
+
+// ---------------------------------------------------------------------------
+// Billing
+// ---------------------------------------------------------------------------
+
+model Invoice {
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique // generated, e.g. INV-2026-000123
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id])
+  createdById   String
+  createdBy     User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+
+  subtotal   Decimal  @db.Decimal(10, 2)
+  taxAmount  Decimal  @db.Decimal(10, 2)
+  discountAmount Decimal @db.Decimal(10, 2) @default(0)
+  totalAmount Decimal @db.Decimal(10, 2)
+
+  status     InvoiceStatus @default(UNPAID)
+  paidAt     DateTime?
+  paymentMethod String?
+
+  // Once paidAt is set, application logic must block direct mutation.
+  // Any change after payment goes through a RefundRequest instead.
+  refundRequests RefundRequest[]
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PAID
+  REFUNDED
+  PARTIALLY_REFUNDED
+  VOID
+}
+
+model RefundRequest {
+  id            String   @id @default(uuid())
+  invoiceId     String
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id])
+  requestedById String
+  reason        String
+  amount        Decimal  @db.Decimal(10, 2)
+  status        RefundStatus @default(PENDING)
+  approvedById  String?
+  approvedBy    User?    @relation("RefundApprovedBy", fields: [approvedById], references: [id])
+  createdAt     DateTime @default(now())
+  decidedAt     DateTime?
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ---------------------------------------------------------------------------
+// Audit logging
+// ---------------------------------------------------------------------------
+
+// Append-only by convention: the application DB role should be granted
+// INSERT/SELECT only on this table, no UPDATE/DELETE, so audit integrity
+// holds even if the application layer is compromised.
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  action     String   // e.g. "LOGIN_SUCCESS", "LOGIN_FAILED", "INVOICE_CREATED"
+  resource   String?  // e.g. "Invoice"
+  resourceId String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?    // redacted before write - never include passwords/secrets/tokens
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+}
