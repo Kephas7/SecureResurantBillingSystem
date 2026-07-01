@@ -1,6 +1,15 @@
-export const metadata = {
-  title: "Restaurant Secure",
+import type { Metadata, Viewport } from "next";
+import { AuthProvider } from "../context/auth.context";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "Restaurant Secure | Management System",
   description: "Secure Restaurant Billing & Management System",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -10,7 +19,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

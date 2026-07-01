@@ -1,0 +1,73 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --color-primary: #2563eb;
+  --color-danger: #dc2626;
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-bg: #f9fafb;
+  --color-surface: #ffffff;
+  --color-border: #e5e7eb;
+  --color-text: #111827;
+  --color-text-muted: #6b7280;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+input,
+button {
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+}
+
+input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background-color: var(--color-primary);
+  color: white;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+a {
+  color: var(--color-primary);
+}
+
+.error-msg {
+  color: var(--color-danger);
+  font-size: 0.875rem;
+}
+
+.success-msg {
+  color: var(--color-success);
+  font-size: 0.875rem;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+}
