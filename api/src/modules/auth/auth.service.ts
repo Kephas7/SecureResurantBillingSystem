@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
@@ -40,6 +41,15 @@ const DEFAULT_ROLE_NAME = 'WAITER';
 // an attacker could enumerate valid emails by measuring response latency.
 const DUMMY_ARGON2_HASH =
   '$argon2id$v=19$m=19456,t=2,p=1$XyHKupWCz47ORMWta9N93Q$DbwCxK52Y1kaEhxQHkmC1MAcgG3/6SihMdFHMh1qC6s';
+
+export interface SafeUser {
+  id: string;
+  email: string;
+  fullName: string;
+  role: string;
+  mfaEnabled: boolean;
+  createdAt: Date;
+}
 
 @Injectable()
 export class AuthService {
@@ -125,6 +135,28 @@ export class AuthService {
 
   async logout(userId: string): Promise<void> {
     await this.writeAuditLog(userId, 'LOGOUT', 'User', userId);
+  }
+
+  async getMe(userId: string): Promise<SafeUser> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { role: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Only ever return fields safe to hand to the browser - never
+    // passwordHash, passwordHistory, or mfaSecretEnc.
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role.name,
+      mfaEnabled: user.mfaEnabled,
+      createdAt: user.createdAt,
+    };
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {

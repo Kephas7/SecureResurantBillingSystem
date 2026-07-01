@@ -1,15 +1,29 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Public } from '../../common/guards/session.guard';
-import { AuthService } from './auth.service';
+import { AuthService, SafeUser } from './auth.service';
 import { ChangePasswordDto, LoginDto, RegisterDto, VerifyMfaDto } from './auth.dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  // No @Public() - requires an authenticated (and MFA-verified, per
+  // SessionGuard) session. This is how the frontend restores "who am I"
+  // state on page load/refresh, since the session lives in an httpOnly
+  // cookie the browser's JS can't read directly.
+  @HttpCode(HttpStatus.OK)
+  @Get('me')
+  async me(@CurrentUser() userId: string | null): Promise<SafeUser> {
+    if (!userId) {
+      throw new UnauthorizedException('Authentication required');
+    }
+
+    return this.authService.getMe(userId);
+  }
 
   @Public()
   // Tighter than the global 100/min limit: login is the primary target for
