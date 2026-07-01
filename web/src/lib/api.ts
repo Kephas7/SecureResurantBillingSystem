@@ -12,12 +12,20 @@ export const apiClient = axios.create({
 
 const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
+// Pages reachable before a full (session + MFA-verified) auth state exists.
+// A 401 on one of these is an expected part of the flow (e.g. a user who
+// is logged in but hasn't completed MFA yet gets 401 from most endpoints
+// until they verify) - redirecting away from them would break the exact
+// flows they exist for.
+const PUBLIC_PATHS = ["/login", "/mfa-verify", "/forgot-password", "/reset-password"];
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ message?: string }>) => {
-    const isLoginPage = typeof window !== "undefined" && window.location.pathname === "/login";
+    const isPublicPath =
+      typeof window !== "undefined" && PUBLIC_PATHS.includes(window.location.pathname);
 
-    if (error.response?.status === 401 && !isLoginPage) {
+    if (error.response?.status === 401 && !isPublicPath) {
       window.location.href = "/login";
     }
 
