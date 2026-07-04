@@ -6,6 +6,7 @@ import { PrismaModule } from "./modules/prisma/prisma.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
 import { TablesModule } from "./modules/tables/tables.module";
+import { MenuModule } from "./modules/menu/menu.module";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
 import { SessionGuard } from "./common/guards/session.guard";
@@ -26,6 +27,7 @@ import { RolesGuard } from "./common/guards/roles.guard";
     AuthModule,
     UsersModule,
     TablesModule,
+    MenuModule,
   ],
   controllers: [],
   providers: [

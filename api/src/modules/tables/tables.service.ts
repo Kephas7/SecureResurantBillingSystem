@@ -1,19 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderStatus, RestaurantTable, TableStatus } from '@prisma/client';
+import { RestaurantTable, TableStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { ACTIVE_ORDER_STATUSES } from '../../common/constants/active-order-statuses';
 import { CreateTableDto, UpdateTableDto } from './tables.dto';
-
-// Orders in any of these statuses still represent a table in active use -
-// only CANCELLED and BILLED orders are terminal, so a table with an
-// order in any other state cannot be deleted out from under it.
-const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
-  OrderStatus.OPEN,
-  OrderStatus.SENT_TO_KITCHEN,
-  OrderStatus.PREPARING,
-  OrderStatus.READY,
-  OrderStatus.SERVED,
-];
 
 @Injectable()
 export class TablesService {
