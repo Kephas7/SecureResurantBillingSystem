@@ -86,3 +86,154 @@ export const authApi = {
       .post<{ message: string }>("/auth/reset-password", { token, newPassword })
       .then((res) => res.data),
 };
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  fullName: string;
+  isActive: boolean;
+  role: string;
+  mfaEnabled: boolean;
+  createdAt: string;
+  failedLoginAttempts: number;
+  lockedUntil: string | null;
+}
+
+export interface CreateUserPayload {
+  email: string;
+  password: string;
+  fullName: string;
+  roleName: string;
+}
+
+export interface UpdateUserPayload {
+  fullName?: string;
+  roleName?: string;
+  isActive?: boolean;
+}
+
+export const usersApi = {
+  getAll: () => apiClient.get<AdminUser[]>("/users").then((res) => res.data),
+
+  create: (data: CreateUserPayload) => apiClient.post<AdminUser>("/users", data).then((res) => res.data),
+
+  update: (id: string, data: UpdateUserPayload) =>
+    apiClient.patch<AdminUser>(`/users/${id}`, data).then((res) => res.data),
+
+  deactivate: (id: string) => apiClient.delete(`/users/${id}`).then((res) => res.data),
+
+  unlock: (id: string) => apiClient.post<{ message: string }>(`/users/${id}/unlock`).then((res) => res.data),
+};
+
+export type TableStatus = "AVAILABLE" | "OCCUPIED" | "RESERVED" | "OUT_OF_SERVICE";
+
+export interface RestaurantTable {
+  id: string;
+  number: number;
+  capacity: number;
+  status: TableStatus;
+}
+
+export interface CreateTablePayload {
+  number: number;
+  capacity: number;
+}
+
+export interface UpdateTablePayload {
+  number?: number;
+  capacity?: number;
+  status?: TableStatus;
+}
+
+export const tablesApi = {
+  getAll: () => apiClient.get<RestaurantTable[]>("/tables").then((res) => res.data),
+
+  getAvailable: () => apiClient.get<RestaurantTable[]>("/tables/available").then((res) => res.data),
+
+  create: (data: CreateTablePayload) => apiClient.post<RestaurantTable>("/tables", data).then((res) => res.data),
+
+  update: (id: string, data: UpdateTablePayload) =>
+    apiClient.patch<RestaurantTable>(`/tables/${id}`, data).then((res) => res.data),
+
+  delete: (id: string) => apiClient.delete(`/tables/${id}`).then((res) => res.data),
+};
+
+export interface MenuCategory {
+  id: string;
+  name: string;
+  _count?: { items: number };
+}
+
+export interface MenuItem {
+  id: string;
+  name: string;
+  description: string | null;
+  price: string;
+  isAvailable: boolean;
+  categoryId: string;
+  category?: { name: string };
+}
+
+export interface CreateCategoryPayload {
+  name: string;
+}
+
+export interface CreateMenuItemPayload {
+  name: string;
+  description?: string;
+  price: number;
+  categoryId: string;
+  isAvailable?: boolean;
+}
+
+export const menuApi = {
+  getCategories: () => apiClient.get<MenuCategory[]>("/menu/categories").then((res) => res.data),
+
+  createCategory: (data: CreateCategoryPayload) =>
+    apiClient.post<MenuCategory>("/menu/categories", data).then((res) => res.data),
+
+  updateCategory: (id: string, data: Partial<CreateCategoryPayload>) =>
+    apiClient.patch<MenuCategory>(`/menu/categories/${id}`, data).then((res) => res.data),
+
+  deleteCategory: (id: string) => apiClient.delete(`/menu/categories/${id}`).then((res) => res.data),
+
+  getItems: () => apiClient.get<MenuItem[]>("/menu/items").then((res) => res.data),
+
+  getAvailableItems: () => apiClient.get<MenuItem[]>("/menu/items/available").then((res) => res.data),
+
+  createItem: (data: CreateMenuItemPayload) => apiClient.post<MenuItem>("/menu/items", data).then((res) => res.data),
+
+  updateItem: (id: string, data: Partial<CreateMenuItemPayload>) =>
+    apiClient.patch<MenuItem>(`/menu/items/${id}`, data).then((res) => res.data),
+
+  toggleItem: (id: string) => apiClient.patch<MenuItem>(`/menu/items/${id}/toggle`).then((res) => res.data),
+
+  deleteItem: (id: string) => apiClient.delete(`/menu/items/${id}`).then((res) => res.data),
+};
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  resource: string | null;
+  resourceId: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: unknown;
+  createdAt: string;
+  actorEmail: string | null;
+}
+
+export interface PaginatedAuditLogs {
+  data: AuditLogEntry[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export const auditApi = {
+  getLogs: (params: { page?: number; limit?: number; action?: string; actorId?: string }) =>
+    apiClient.get<PaginatedAuditLogs>("/audit/logs", { params }).then((res) => res.data),
+
+  getActions: () => apiClient.get<string[]>("/audit/logs/actions").then((res) => res.data),
+};

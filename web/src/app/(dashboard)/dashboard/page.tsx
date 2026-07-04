@@ -1,14 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useAuth } from "../../../context/auth.context";
-
-const ROLE_CARDS: Record<string, string[]> = {
-  ADMIN: ["Users", "Logs"],
-  MANAGER: ["Orders", "Inventory", "Reports", "Refunds"],
-  CASHIER: ["Orders", "Billing"],
-  WAITER: ["Orders", "Tables"],
-  KITCHEN: ["Kitchen Queue"],
-};
+import { navItemsForRole } from "../../../lib/nav-items";
 
 // Role-based UI rendering is a UX convenience only. Access control is
 // enforced server-side via RolesGuard on every API endpoint (see
@@ -24,7 +18,7 @@ export default function DashboardPage(): JSX.Element {
     return <p>Loading...</p>;
   }
 
-  const cards = ROLE_CARDS[user.role] ?? [];
+  const items = navItemsForRole(user.role);
 
   return (
     <div>
@@ -38,12 +32,18 @@ export default function DashboardPage(): JSX.Element {
           gap: "1rem",
         }}
       >
-        {cards.map((name) => (
-          <div key={name} className="card">
-            <h3>{name}</h3>
-            <p style={{ color: "var(--color-text-muted)" }}>Coming soon</p>
-          </div>
-        ))}
+        {items.map((item) =>
+          item.comingSoon ? (
+            <div key={item.label} className="card" style={{ opacity: 0.6 }}>
+              <h3>{item.label}</h3>
+              <p style={{ color: "var(--color-text-muted)" }}>Coming soon</p>
+            </div>
+          ) : (
+            <Link key={item.label} href={item.href} className="card" style={{ display: "block" }}>
+              <h3>{item.label}</h3>
+            </Link>
+          ),
+        )}
       </div>
     </div>
   );
