@@ -4,6 +4,7 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { PrismaModule } from "./modules/prisma/prisma.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { UsersModule } from "./modules/users/users.module";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
 import { SessionGuard } from "./common/guards/session.guard";
@@ -22,6 +23,7 @@ import { RolesGuard } from "./common/guards/roles.guard";
     ]),
     PrismaModule,
     AuthModule,
+    UsersModule,
   ],
   controllers: [],
   providers: [
