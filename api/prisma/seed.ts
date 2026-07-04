@@ -44,6 +44,27 @@ const ROLE_PERMISSIONS: Record<(typeof ROLES)[number], string[]> = {
 const ADMIN_EMAIL = 'admin@restaurant.local';
 const ADMIN_PASSWORD = 'Admin@Secure123!';
 
+// One test account per non-admin role, for local development and the
+// Day 8 pen-testing phase (need a real credential per role to exercise
+// RolesGuard from every angle, not just as ADMIN).
+const TEST_ACCOUNTS: { email: string; password: string; fullName: string; role: (typeof ROLES)[number] }[] = [
+  { email: 'manager@restaurant.local', password: 'Manager@Secure123!', fullName: 'Test Manager', role: 'MANAGER' },
+  { email: 'cashier@restaurant.local', password: 'Cashier@Secure123!', fullName: 'Test Cashier', role: 'CASHIER' },
+  { email: 'waiter@restaurant.local', password: 'Waiter@Secure123!', fullName: 'Test Waiter', role: 'WAITER' },
+  { email: 'kitchen@restaurant.local', password: 'Kitchen@Secure123!', fullName: 'Test Kitchen', role: 'KITCHEN' },
+];
+
+async function hashPassword(password: string): Promise<string> {
+  // Same Argon2id params as AuthService.hashPassword() - see that method
+  // for the OWASP rationale.
+  return argon2.hash(password, {
+    type: argon2.argon2id,
+    memoryCost: Number(process.env.ARGON2_MEMORY_COST ?? 19456),
+    timeCost: Number(process.env.ARGON2_TIME_COST ?? 2),
+    parallelism: Number(process.env.ARGON2_PARALLELISM ?? 1),
+  });
+}
+
 async function main(): Promise<void> {
   for (const name of ROLES) {
     await prisma.role.upsert({
@@ -79,15 +100,7 @@ async function main(): Promise<void> {
 
   if (!existingAdmin) {
     const adminRole = await prisma.role.findUniqueOrThrow({ where: { name: 'ADMIN' } });
-
-    // Same Argon2id params as AuthService.hashPassword() - see that method
-    // for the OWASP rationale.
-    const passwordHash = await argon2.hash(ADMIN_PASSWORD, {
-      type: argon2.argon2id,
-      memoryCost: Number(process.env.ARGON2_MEMORY_COST ?? 19456),
-      timeCost: Number(process.env.ARGON2_TIME_COST ?? 2),
-      parallelism: Number(process.env.ARGON2_PARALLELISM ?? 1),
-    });
+    const passwordHash = await hashPassword(ADMIN_PASSWORD);
 
     await prisma.user.create({
       data: {
@@ -104,6 +117,27 @@ async function main(): Promise<void> {
       `\nSeeded admin account:\n  email:    ${ADMIN_EMAIL}\n  password: ${ADMIN_PASSWORD}\n` +
         '  WARNING: change this password immediately after first login.\n',
     );
+  }
+
+  for (const account of TEST_ACCOUNTS) {
+    const existing = await prisma.user.findUnique({ where: { email: account.email } });
+    if (existing) continue;
+
+    const role = await prisma.role.findUniqueOrThrow({ where: { name: account.role } });
+    const passwordHash = await hashPassword(account.password);
+
+    await prisma.user.create({
+      data: {
+        email: account.email,
+        passwordHash,
+        passwordHistory: [passwordHash],
+        fullName: account.fullName,
+        roleId: role.id,
+      },
+    });
+
+    // eslint-disable-next-line no-console
+    console.warn(`Seeded test account: ${account.email} / ${account.password} (${account.role})`);
   }
 }
 
