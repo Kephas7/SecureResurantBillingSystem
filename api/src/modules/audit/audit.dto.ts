@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class QueryAuditLogsDto {
   @Type(() => Number)
@@ -21,4 +21,12 @@ export class QueryAuditLogsDto {
   @IsString()
   @IsOptional()
   actorId?: string;
+
+  @IsDateString()
+  @IsOptional()
+  startDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  endDate?: string;
 }

@@ -28,13 +28,25 @@ export interface PaginatedAuditLogs {
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findLogs(page: number, limit: number, action?: string, actorId?: string): Promise<PaginatedAuditLogs> {
+  async findLogs(
+    page: number,
+    limit: number,
+    action?: string,
+    actorId?: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<PaginatedAuditLogs> {
     const safePage = Math.max(1, page);
     const safeLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
+
+    const createdAtFilter: Prisma.DateTimeFilter = {};
+    if (startDate) createdAtFilter.gte = new Date(startDate);
+    if (endDate) createdAtFilter.lte = new Date(endDate);
 
     const where: Prisma.AuditLogWhereInput = {
       ...(action ? { action } : {}),
       ...(actorId ? { actorId } : {}),
+      ...(startDate || endDate ? { createdAt: createdAtFilter } : {}),
     };
 
     const [rows, total] = await this.prisma.$transaction([

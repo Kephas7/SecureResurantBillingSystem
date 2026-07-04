@@ -21,6 +21,8 @@ export class AuditController {
       query.limit ?? DEFAULT_LIMIT,
       query.action,
       query.actorId,
+      query.startDate,
+      query.endDate,
     );
   }
 

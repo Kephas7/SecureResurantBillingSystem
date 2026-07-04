@@ -232,7 +232,14 @@ export interface PaginatedAuditLogs {
 }
 
 export const auditApi = {
-  getLogs: (params: { page?: number; limit?: number; action?: string; actorId?: string }) =>
+  getLogs: (params: {
+    page?: number;
+    limit?: number;
+    action?: string;
+    actorId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) =>
     apiClient.get<PaginatedAuditLogs>("/audit/logs", { params }).then((res) => res.data),
 
   getActions: () => apiClient.get<string[]>("/audit/logs/actions").then((res) => res.data),
