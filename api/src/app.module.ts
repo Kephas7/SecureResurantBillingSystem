@@ -7,6 +7,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
 import { TablesModule } from "./modules/tables/tables.module";
 import { MenuModule } from "./modules/menu/menu.module";
+import { AuditModule } from "./modules/audit/audit.module";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
 import { SessionGuard } from "./common/guards/session.guard";
@@ -28,6 +29,7 @@ import { RolesGuard } from "./common/guards/roles.guard";
     UsersModule,
     TablesModule,
     MenuModule,
+    AuditModule,
   ],
   controllers: [],
   providers: [
