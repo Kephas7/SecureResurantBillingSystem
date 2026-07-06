@@ -90,6 +90,18 @@ export class TablesService {
       throw new ConflictException('Cannot delete a table with active orders');
     }
 
+    // Order.tableId is a required foreign key with no cascade delete, so
+    // even a CANCELLED or BILLED order (already excluded from the active
+    // check above) still blocks deletion at the DB level - and, more
+    // importantly, should: an order is permanent business/audit history,
+    // the same reason Users are soft-deleted rather than removed. Check
+    // for this explicitly so the caller gets a clear 409 instead of a
+    // raw foreign-key-constraint 500.
+    const anyOrderCount = await this.prisma.order.count({ where: { tableId: id } });
+    if (anyOrderCount > 0) {
+      throw new ConflictException('Cannot delete a table that has order history');
+    }
+
     await this.prisma.restaurantTable.delete({ where: { id } });
 
     await this.auditLog.write(actorId, 'TABLE_DELETED', 'RestaurantTable', id);

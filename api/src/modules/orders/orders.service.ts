@@ -106,6 +106,14 @@ export class OrdersService {
     const priceByMenuItemId = await this.verifyItemsAvailable(dto.items.map((item) => item.menuItemId));
 
     const order = await this.prisma.$transaction(async (tx) => {
+      // Table status is updated before the order is created (and its
+      // relations fetched) so the nested `table` in the response below
+      // reflects the post-update status. Doing this the other way round
+      // would return a stale `table.status: AVAILABLE` snapshot from the
+      // moment order.create's include ran, even though the DB row itself
+      // would be correctly OCCUPIED by the time the request completed.
+      await tx.restaurantTable.update({ where: { id: dto.tableId }, data: { status: TableStatus.OCCUPIED } });
+
       const created = await tx.order.create({
         data: {
           tableId: dto.tableId,
@@ -137,8 +145,6 @@ export class OrdersService {
           changedById: creatorId,
         },
       });
-
-      await tx.restaurantTable.update({ where: { id: dto.tableId }, data: { status: TableStatus.OCCUPIED } });
 
       return created;
     });
