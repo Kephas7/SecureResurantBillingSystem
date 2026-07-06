@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 import { TableStatus } from '@prisma/client';
 
 export class CreateTableDto {
@@ -27,4 +27,9 @@ export class UpdateTableDto {
   @IsEnum(TableStatus)
   @IsOptional()
   status?: TableStatus;
+}
+
+export class AssignTableDto {
+  @IsUUID()
+  waiterId!: string;
 }

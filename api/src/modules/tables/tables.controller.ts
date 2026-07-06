@@ -1,9 +1,10 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
-import { RestaurantTable } from '@prisma/client';
+import { RestaurantTable, TableAssignment } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUserRole } from '../../common/decorators/current-user-role.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { TablesService } from './tables.service';
-import { CreateTableDto, UpdateTableDto } from './tables.dto';
+import { AssignTableDto, CreateTableDto, UpdateTableDto } from './tables.dto';
 
 @Controller('tables')
 export class TablesController {
@@ -49,5 +50,35 @@ export class TablesController {
   @Delete(':id')
   async remove(@Param('id') id: string, @CurrentUser() actorId: string): Promise<void> {
     await this.tablesService.remove(id, actorId);
+  }
+
+  @Roles('WAITER', 'MANAGER', 'ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @Post(':id/assign')
+  async assignWaiter(
+    @Param('id') id: string,
+    @Body() dto: AssignTableDto,
+    @CurrentUser() actorId: string,
+    @CurrentUserRole() actorRole: string,
+  ): Promise<TableAssignment> {
+    return this.tablesService.assignWaiter(id, dto, actorId, actorRole);
+  }
+
+  @Roles('WAITER', 'MANAGER', 'ADMIN')
+  @HttpCode(HttpStatus.OK)
+  @Post(':id/release')
+  async releaseTable(
+    @Param('id') id: string,
+    @CurrentUser() actorId: string,
+    @CurrentUserRole() actorRole: string,
+  ): Promise<{ message: string }> {
+    await this.tablesService.releaseTable(id, actorId, actorRole);
+    return { message: 'Table released successfully' };
+  }
+
+  @Roles('ADMIN', 'MANAGER', 'WAITER')
+  @Get(':id/assignment')
+  async getAssignment(@Param('id') id: string): Promise<TableAssignment | null> {
+    return this.tablesService.getTableAssignment(id);
   }
 }
