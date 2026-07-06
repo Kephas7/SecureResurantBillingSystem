@@ -145,6 +145,14 @@ export interface UpdateTablePayload {
   status?: TableStatus;
 }
 
+export interface TableAssignment {
+  id: string;
+  tableId: string;
+  waiterId: string;
+  assignedAt: string;
+  releasedAt: string | null;
+}
+
 export const tablesApi = {
   getAll: () => apiClient.get<RestaurantTable[]>("/tables").then((res) => res.data),
 
@@ -156,6 +164,15 @@ export const tablesApi = {
     apiClient.patch<RestaurantTable>(`/tables/${id}`, data).then((res) => res.data),
 
   delete: (id: string) => apiClient.delete(`/tables/${id}`).then((res) => res.data),
+
+  assign: (id: string, waiterId: string) =>
+    apiClient.post<TableAssignment>(`/tables/${id}/assign`, { waiterId }).then((res) => res.data),
+
+  release: (id: string) =>
+    apiClient.post<{ message: string }>(`/tables/${id}/release`).then((res) => res.data),
+
+  getAssignment: (id: string) =>
+    apiClient.get<TableAssignment | null>(`/tables/${id}/assignment`).then((res) => res.data),
 };
 
 export interface MenuCategory {
@@ -243,4 +260,71 @@ export const auditApi = {
     apiClient.get<PaginatedAuditLogs>("/audit/logs", { params }).then((res) => res.data),
 
   getActions: () => apiClient.get<string[]>("/audit/logs/actions").then((res) => res.data),
+};
+
+export type OrderStatus =
+  | "OPEN"
+  | "SENT_TO_KITCHEN"
+  | "PREPARING"
+  | "READY"
+  | "SERVED"
+  | "CANCELLED"
+  | "BILLED";
+
+export interface OrderItemResponse {
+  id: string;
+  quantity: number;
+  notes: string | null;
+  unitPrice?: string;
+  menuItem: { id: string; name: string; price?: string };
+}
+
+export interface Order {
+  id: string;
+  tableId: string;
+  status: OrderStatus;
+  createdAt: string;
+  updatedAt: string;
+  table: RestaurantTable;
+  createdBy: { id: string; fullName: string; email: string };
+  items: OrderItemResponse[];
+}
+
+export interface OrderStatusHistoryEntry {
+  id: string;
+  orderId: string;
+  fromStatus: OrderStatus;
+  toStatus: OrderStatus;
+  changedAt: string;
+  changedById: string | null;
+}
+
+export interface CreateOrderItemPayload {
+  menuItemId: string;
+  quantity: number;
+  notes?: string;
+}
+
+export interface CreateOrderPayload {
+  tableId: string;
+  items: CreateOrderItemPayload[];
+}
+
+export const ordersApi = {
+  getAll: () => apiClient.get<Order[]>("/orders").then((res) => res.data),
+
+  getOne: (id: string) => apiClient.get<Order>(`/orders/${id}`).then((res) => res.data),
+
+  create: (data: CreateOrderPayload) => apiClient.post<Order>("/orders", data).then((res) => res.data),
+
+  updateItems: (id: string, data: { items: CreateOrderItemPayload[] }) =>
+    apiClient.patch<Order>(`/orders/${id}/items`, data).then((res) => res.data),
+
+  updateStatus: (id: string, status: OrderStatus) =>
+    apiClient.patch<Order>(`/orders/${id}/status`, { status }).then((res) => res.data),
+
+  cancel: (id: string) => apiClient.delete<Order>(`/orders/${id}`).then((res) => res.data),
+
+  getHistory: (id: string) =>
+    apiClient.get<OrderStatusHistoryEntry[]>(`/orders/${id}/history`).then((res) => res.data),
 };
