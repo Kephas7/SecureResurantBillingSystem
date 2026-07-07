@@ -12,6 +12,7 @@ import { OrdersModule } from "./modules/orders/orders.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { BillingModule } from "./modules/billing/billing.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { validateEnv } from "./config/env.validation";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
 import { SessionGuard } from "./common/guards/session.guard";
@@ -19,7 +20,10 @@ import { RolesGuard } from "./common/guards/roles.guard";
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    // validate runs at startup and crashes immediately if a required
+    // secret is missing/malformed - see config/env.validation.ts for the
+    // fail-fast rationale (OWASP A05: Security Misconfiguration).
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     // Global baseline rate limit; tighter limits applied per-route on
     // sensitive endpoints (e.g. /auth/login) in the auth module.
     ThrottlerModule.forRoot([
