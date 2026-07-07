@@ -5,21 +5,105 @@ import helmet from "helmet";
 import session from "express-session";
 import RedisStore from "connect-redis";
 import Redis from "ioredis";
+import { json, urlencoded } from "express";
 import { AppModule } from "./app.module";
 
+// HTTP security headers are a defence-in-depth layer. They do not
+// replace input validation or authentication but reduce the impact of
+// vulnerabilities like XSS (CSP), clickjacking (frameguard), and
+// protocol downgrade attacks (HSTS). Implemented per the OWASP Secure
+// Headers Project recommendations.
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // bodyParser is disabled here so the size-limited json()/urlencoded()
+  // middleware below are the ONLY body parsers registered - Nest's
+  // default bodyParser (enabled unless turned off) would otherwise
+  // consume the request stream first, silently making any body-parser
+  // middleware added afterwards a no-op with no size limit actually
+  // enforced.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
 
-  // --- Security headers (OWASP Secure Headers Project) ---
-  // Sets sane defaults for CSP, X-Frame-Options, X-Content-Type-Options,
-  // HSTS, etc. so we don't have to hand-roll each header individually.
-  app.use(helmet());
+  app.use(
+    helmet({
+      // Restricts which sources the browser will load scripts/styles/
+      // images/etc from - the primary defence against XSS payload
+      // execution even if an injection point exists somewhere in the
+      // app (script-src 'self' blocks any injected <script src="evil">
+      // or inline handler from ever running).
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:"],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          frameSrc: ["'none'"],
+          upgradeInsecureRequests: [],
+        },
+      },
+      // Prevents clickjacking - stops the app being embedded in an
+      // iframe on an attacker's page to trick users into clicking
+      // hidden UI elements.
+      frameguard: { action: "deny" },
+      // Prevents MIME-type sniffing attacks - stops the browser from
+      // re-interpreting a response as a different content type than
+      // declared (e.g. treating an uploaded "image" as executable JS).
+      noSniff: true,
+      // Stops the browser sending the full Referer header (which can
+      // leak URLs containing sensitive query params/tokens) to other
+      // origins on cross-origin navigation.
+      referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+      // Enforces HTTPS for 1 year in production, preventing protocol-
+      // downgrade/SSL-stripping attacks. Left off in dev since local
+      // HTTP has no TLS to enforce.
+      hsts:
+        process.env.NODE_ENV === "production"
+          ? { maxAge: 31536000, includeSubDomains: true }
+          : false,
+      // Removes the X-Powered-By header - a small fingerprinting
+      // reduction so an attacker doing recon can't trivially confirm
+      // this is an Express app from the response headers alone.
+      hidePoweredBy: true,
+    }),
+  );
 
-  // --- CORS: only the known frontend origin, credentials allowed for cookies ---
+  // --- CORS: exact-match origin check, credentials allowed for cookies ---
+  // Uses an exact-match callback rather than a regex or wildcard. A
+  // misconfigured regex (e.g. /restaurant\.local/) can be bypassed by an
+  // attacker registering a domain like evil-restaurant.local, since the
+  // pattern matches anywhere in the string unless carefully anchored.
+  // Exact string match eliminates this class of CORS misconfiguration
+  // entirely (PortSwigger Web Security Academy - CORS vulnerabilities).
   app.enableCors({
-    origin: process.env.WEB_ORIGIN,
+    origin: (origin, callback) => {
+      const allowed = process.env.WEB_ORIGIN;
+      // Allow requests with no Origin header (server-to-server calls,
+      // curl, same-origin requests) - only browser-driven cross-origin
+      // requests carry an Origin header for CORS to police in the first
+      // place.
+      if (!origin || origin === allowed) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Accept"],
+    // Do not expose any internal headers to the browser beyond the
+    // handful CORS always allows by default.
+    exposedHeaders: [],
   });
+
+  // --- Request body size limits ---
+  // Without an explicit limit, an attacker can send arbitrarily large
+  // request bodies to exhaust server memory or CPU parsing them. 100kb
+  // is generous for every legitimate payload in this system (the
+  // largest is an order with several line items) (OWASP A05: Security
+  // Misconfiguration).
+  app.use(json({ limit: "100kb" }));
+  app.use(urlencoded({ extended: true, limit: "100kb" }));
 
   // --- Global input validation ---
   // whitelist: strips any property not declared on the DTO.
