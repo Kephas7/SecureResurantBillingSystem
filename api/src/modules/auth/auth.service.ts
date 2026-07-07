@@ -134,7 +134,29 @@ export class AuthService {
 
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
       const minutesRemaining = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
-      throw new ForbiddenException(`Account is locked. Try again in ${minutesRemaining} minute(s)`);
+      // SECURITY FIX — FINDING-003
+      // Previously this branch threw a distinct ForbiddenException
+      // ("Account is locked...") that a non-existent email could
+      // never trigger, letting an attacker confirm account existence
+      // by brute-forcing 5 attempts and checking which error came
+      // back. We now return the same exception type/status
+      // (UnauthorizedException/401) as invalid credentials, with a
+      // message that does not confirm the account exists while still
+      // being useful to a legitimate user who knows they have one.
+      // (OWASP Authentication Cheat Sheet — Protect Against
+      //  Username Enumeration)
+      //
+      // This is a partial mitigation, not a complete one: a
+      // determined attacker can still infer account existence by
+      // noticing that the "try again in N minute(s)" detail only
+      // ever appears for real accounts. Closing that gap fully would
+      // require applying lockout-shaped delays to unknown emails too
+      // (see FINDING-004's discussion of the same trade-off for
+      // password reset), which was judged to degrade legitimate-user
+      // UX more than the residual risk here justifies.
+      throw new UnauthorizedException(
+        `Invalid credentials or account temporarily locked. If you have an account, try again in ${minutesRemaining} minute(s).`,
+      );
     }
 
     if (!user.isActive) {
