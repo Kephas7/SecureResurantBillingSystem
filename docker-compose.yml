@@ -41,7 +41,17 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      # DATABASE_URL/REDIS_HOST/REDIS_PORT in .env point at "localhost"
+      # for host-side (non-Docker) development, since that's how the app
+      # reaches these containers' mapped ports when run locally with
+      # `npm run start:dev`. Inside this container "localhost" is the
+      # container itself, not the host - so these three are explicitly
+      # overridden here to use the docker-compose service names/internal
+      # ports instead. Everything else the api needs (secrets, WEB_ORIGIN,
+      # etc.) still comes from the shared .env via env_file above.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +67,15 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* vars are inlined into the client bundle at build
+        # time, not read at container startup - so they must be passed
+        # as build args here rather than as runtime `environment:`.
+        # http://localhost:4000 is correct because this URL is used by
+        # the *browser* (on the host), which reaches the api container
+        # through its mapped port - not by one container calling another.
+        NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-4000}
+        NEXT_PUBLIC_CAPTCHA_SITE_KEY: ${NEXT_PUBLIC_CAPTCHA_SITE_KEY:-}
     restart: unless-stopped
     env_file: .env
     depends_on:
