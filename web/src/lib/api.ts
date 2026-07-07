@@ -328,3 +328,138 @@ export const ordersApi = {
   getHistory: (id: string) =>
     apiClient.get<OrderStatusHistoryEntry[]>(`/orders/${id}/history`).then((res) => res.data),
 };
+
+export type PaymentMethod = "CASH" | "CARD" | "MOBILE";
+export type InvoiceStatus = "UNPAID" | "PAID" | "REFUNDED" | "PARTIALLY_REFUNDED" | "VOID";
+export type RefundStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  orderId: string;
+  subtotal: string;
+  taxAmount: string;
+  discountAmount: string;
+  totalAmount: string;
+  status: InvoiceStatus;
+  paidAt: string | null;
+  paymentMethod: PaymentMethod | null;
+  createdAt: string;
+  order: Order;
+  createdBy: { id: string; fullName: string; email: string };
+  refundRequests: RefundRequest[];
+}
+
+export interface RefundRequest {
+  id: string;
+  invoiceId: string;
+  requestedById: string;
+  reason: string;
+  amount: string;
+  status: RefundStatus;
+  approvedById: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+  invoice?: { id: string; invoiceNumber: string; totalAmount: string };
+}
+
+export interface PaginatedInvoices {
+  data: Invoice[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface CreateInvoicePayload {
+  orderId: string;
+  paymentMethod: PaymentMethod;
+  discountAmount?: number;
+}
+
+export const billingApi = {
+  getInvoices: (page = 1, limit = 20) =>
+    apiClient.get<PaginatedInvoices>("/billing/invoices", { params: { page, limit } }).then((res) => res.data),
+
+  getInvoice: (id: string) => apiClient.get<Invoice>(`/billing/invoices/${id}`).then((res) => res.data),
+
+  getInvoiceByOrder: (orderId: string) =>
+    apiClient.get<Invoice>(`/billing/invoices/order/${orderId}`).then((res) => res.data),
+
+  createInvoice: (data: CreateInvoicePayload) =>
+    apiClient.post<Invoice>("/billing/invoices", data).then((res) => res.data),
+
+  confirmPayment: (id: string) => apiClient.post<Invoice>(`/billing/invoices/${id}/confirm`).then((res) => res.data),
+
+  requestRefund: (id: string, data: { amount: number; reason: string }) =>
+    apiClient.post<RefundRequest>(`/billing/invoices/${id}/refund`, data).then((res) => res.data),
+
+  getPendingRefunds: () =>
+    apiClient.get<RefundRequest[]>("/billing/refunds/pending").then((res) => res.data),
+
+  getDecidedRefunds: (limit = 20) =>
+    apiClient.get<RefundRequest[]>("/billing/refunds/decided", { params: { limit } }).then((res) => res.data),
+
+  approveRefund: (refundId: string) =>
+    apiClient.post<{ message: string }>(`/billing/refunds/${refundId}/approve`).then((res) => res.data),
+
+  rejectRefund: (refundId: string) =>
+    apiClient.post<{ message: string }>(`/billing/refunds/${refundId}/reject`).then((res) => res.data),
+};
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contactInfo: string | null;
+}
+
+export interface Ingredient {
+  id: string;
+  name: string;
+  unit: string;
+  stockQuantity: string;
+  lowStockThreshold: string;
+  supplierId: string | null;
+  supplier?: { id: string; name: string } | null;
+}
+
+export interface CreateIngredientPayload {
+  name: string;
+  unit: string;
+  stockQuantity: number;
+  lowStockThreshold: number;
+  supplierId?: string;
+}
+
+export interface AdjustStockPayload {
+  adjustment: number;
+  reason: string;
+}
+
+export interface CreateSupplierPayload {
+  name: string;
+  contactInfo?: string;
+}
+
+export const inventoryApi = {
+  getIngredients: () => apiClient.get<Ingredient[]>("/inventory/ingredients").then((res) => res.data),
+
+  getLowStock: () => apiClient.get<Ingredient[]>("/inventory/ingredients/low-stock").then((res) => res.data),
+
+  createIngredient: (data: CreateIngredientPayload) =>
+    apiClient.post<Ingredient>("/inventory/ingredients", data).then((res) => res.data),
+
+  updateIngredient: (id: string, data: Partial<CreateIngredientPayload>) =>
+    apiClient.patch<Ingredient>(`/inventory/ingredients/${id}`, data).then((res) => res.data),
+
+  adjustStock: (id: string, data: AdjustStockPayload) =>
+    apiClient.post<Ingredient>(`/inventory/ingredients/${id}/adjust`, data).then((res) => res.data),
+
+  getSuppliers: () => apiClient.get<Supplier[]>("/inventory/suppliers").then((res) => res.data),
+
+  createSupplier: (data: CreateSupplierPayload) =>
+    apiClient.post<Supplier>("/inventory/suppliers", data).then((res) => res.data),
+
+  updateSupplier: (id: string, data: Partial<CreateSupplierPayload>) =>
+    apiClient.patch<Supplier>(`/inventory/suppliers/${id}`, data).then((res) => res.data),
+};
