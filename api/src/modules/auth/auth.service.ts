@@ -239,38 +239,60 @@ export class AuthService {
     await this.writeAuditLog(userId, 'PASSWORD_CHANGED', 'User', userId);
   }
 
+  // SECURITY FIX — FINDING-004
+  // The response body was already identical for real vs. non-existent
+  // emails (see the OWASP ASVS 2.2 comment below), but the real-email
+  // path does real work (DB read + write, hashing) while the
+  // non-existent-email path returned immediately - a timing side
+  // channel that let an attacker distinguish the two by measuring
+  // response latency instead of reading the body. Both paths now run
+  // through the same `finally` block, which pads the response out to
+  // a fixed minimum duration, so the two cases are equalised in time
+  // as well as in content.
+  // (OWASP Authentication Cheat Sheet — Prevent Timing Attacks)
   async requestPasswordReset(email: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
-      select: { id: true },
-    });
+    const MIN_RESPONSE_MS = 500;
+    const startTime = Date.now();
 
-    // SECURITY: always return success whether or not the email exists, so
-    // this endpoint can't be used to enumerate registered accounts (OWASP
-    // ASVS 2.2 - authentication responses must not disclose which
-    // identifiers are valid). The caller only ever sees a generic
-    // "if that email is registered..." message regardless of outcome.
-    if (!user) {
-      return;
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { email: email.toLowerCase() },
+        select: { id: true },
+      });
+
+      // SECURITY: always return success whether or not the email exists, so
+      // this endpoint can't be used to enumerate registered accounts (OWASP
+      // ASVS 2.2 - authentication responses must not disclose which
+      // identifiers are valid). The caller only ever sees a generic
+      // "if that email is registered..." message regardless of outcome.
+      if (!user) {
+        return;
+      }
+
+      // Raw token is never stored - only its SHA-256 hash. This means a
+      // database breach does not expose valid reset tokens, the same
+      // principle as password hashing applied to a short-lived token.
+      const token = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      await this.prisma.passwordResetToken.create({
+        data: { userId: user.id, tokenHash, expiresAt },
+      });
+
+      // Stub: in production this would email the raw token as a reset link.
+      // Logged here (dev only) so the flow can be exercised end-to-end
+      // without a real mail provider configured.
+      this.logger.warn(`Password reset token (dev only): ${token}`);
+
+      await this.writeAuditLog(user.id, 'PASSWORD_RESET_REQUESTED', 'User', user.id);
+    } finally {
+      const elapsed = Date.now() - startTime;
+      const remaining = MIN_RESPONSE_MS - elapsed;
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
     }
-
-    // Raw token is never stored - only its SHA-256 hash. This means a
-    // database breach does not expose valid reset tokens, the same
-    // principle as password hashing applied to a short-lived token.
-    const token = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-
-    await this.prisma.passwordResetToken.create({
-      data: { userId: user.id, tokenHash, expiresAt },
-    });
-
-    // Stub: in production this would email the raw token as a reset link.
-    // Logged here (dev only) so the flow can be exercised end-to-end
-    // without a real mail provider configured.
-    this.logger.warn(`Password reset token (dev only): ${token}`);
-
-    await this.writeAuditLog(user.id, 'PASSWORD_RESET_REQUESTED', 'User', user.id);
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
