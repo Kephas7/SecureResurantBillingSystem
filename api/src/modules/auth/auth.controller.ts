@@ -132,8 +132,12 @@ export class AuthController {
   }
 
   // Public: called mid-login, before req.session.mfaVerified is true, so
-  // the global SessionGuard would otherwise reject the request.
+  // the global SessionGuard would otherwise reject the request. Rate
+  // limited like the other auth endpoints - a 6-digit TOTP code has only
+  // 10^6 possibilities, so without a strict limit here this endpoint
+  // would be brute-forceable within a login session.
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @HttpCode(HttpStatus.OK)
   @Post('mfa/verify')
   async verifyMfa(@Body() dto: VerifyMfaDto, @Req() req: Request): Promise<{ message: string }> {

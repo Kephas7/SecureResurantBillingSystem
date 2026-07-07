@@ -24,10 +24,23 @@ import { RolesGuard } from "./common/guards/roles.guard";
     // secret is missing/malformed - see config/env.validation.ts for the
     // fail-fast rationale (OWASP A05: Security Misconfiguration).
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
-    // Global baseline rate limit; tighter limits applied per-route on
-    // sensitive endpoints (e.g. /auth/login) in the auth module.
+    // Rate limiting strategy (documented here for the coursework report):
+    // - Global: 100 req/min - prevents automated scanning/scraping of
+    //   the API as a whole, applied to every route via ThrottlerGuard.
+    // - Auth endpoints: 3-10 req/min (see auth.controller.ts's per-route
+    //   @Throttle overrides) - the primary brute-force defence alongside
+    //   account lockout (defence in depth: even if one control has a
+    //   gap, the other still bounds the attack).
+    // - Rate limits are enforced by @nestjs/throttler using an in-memory
+    //   store (dev). In production, with multiple API instances behind
+    //   a load balancer, this should use a Redis store so limits are
+    //   shared across instances - otherwise an attacker could get N
+    //   instances' worth of attempts by hitting different instances.
+    //   The in-memory store is appropriate for the single-instance
+    //   deployment this coursework targets.
     ThrottlerModule.forRoot([
       {
+        name: 'global',
         ttl: 60000,
         limit: 100,
       },
