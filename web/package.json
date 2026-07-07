@@ -14,7 +14,7 @@
     "axios": "^1.18.1",
     "js-cookie": "^3.0.8",
     "lucide-react": "^1.22.0",
-    "next": "^14.2.5",
+    "next": "^16.2.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.80.0",
@@ -27,5 +27,8 @@
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.5",
     "typescript": "^5.5.4"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }
