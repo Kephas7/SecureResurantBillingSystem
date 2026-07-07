@@ -18,10 +18,10 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Menu", href: "/menu", roles: ["ADMIN", "MANAGER"] },
   { label: "Orders", href: "/orders", roles: ["ADMIN", "MANAGER", "CASHIER", "WAITER"] },
   { label: "Kitchen Queue", href: "/kitchen", roles: ["KITCHEN"] },
-  { label: "Billing", href: "/billing", roles: ["CASHIER"], comingSoon: true },
-  { label: "Inventory", href: "/inventory", roles: ["MANAGER"], comingSoon: true },
-  { label: "Reports", href: "/reports", roles: ["MANAGER"], comingSoon: true },
+  { label: "Billing", href: "/billing", roles: ["ADMIN", "CASHIER"] },
+  { label: "Inventory", href: "/inventory", roles: ["ADMIN", "MANAGER"] },
   { label: "Refunds", href: "/manager/refunds", roles: ["ADMIN", "MANAGER"] },
+  { label: "Reports", href: "/reports", roles: ["MANAGER"], comingSoon: true },
 ];
 
 export function navItemsForRole(role: string): NavItem[] {
