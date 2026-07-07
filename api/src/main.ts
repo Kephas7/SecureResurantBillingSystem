@@ -122,6 +122,23 @@ async function bootstrap() {
   );
 
   // --- Session store in Redis, secure cookie attributes ---
+  // ACCEPTED RISK — FINDING-006 (Informational, Day 8 pentest)
+  // No cap on concurrent sessions per user: logging in again does not
+  // evict any prior session, so a stolen/leaked session cookie stays
+  // valid until it expires or is explicitly logged out, even after the
+  // legitimate user logs in elsewhere. Enforcing a limit (e.g. evict
+  // oldest beyond N) requires tracking session IDs per user, which
+  // requires the Redis client below to be injectable into AuthService
+  // - today it is constructed here, ad hoc, purely for express-session,
+  // and is not part of the Nest DI graph at all. Wiring that up
+  // correctly (a proper Redis provider/module, ideally a sorted set
+  // keyed by login timestamp so eviction is actually oldest-first
+  // rather than the unordered "first member of a Redis Set" a quick
+  // version would produce) is a real infrastructure change, not a
+  // one-line fix, and this finding is not independently exploitable.
+  // Accepted for now; see docs/pentest/findings.md FINDING-006 for the
+  // full justification and the recommended follow-up design.
+  // (OWASP Session Management Cheat Sheet — Concurrent Sessions)
   const redisClient = new Redis({
     host: process.env.REDIS_HOST,
     port: Number(process.env.REDIS_PORT),
