@@ -306,7 +306,10 @@ export class BillingService {
   }
 
   private async assertIsManagerOrAdmin(userId: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { role: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: { select: { name: true } } },
+    });
     if (!user || (user.role.name !== 'MANAGER' && user.role.name !== 'ADMIN')) {
       throw new ForbiddenException('Only Managers or Admins can approve or reject refunds');
     }

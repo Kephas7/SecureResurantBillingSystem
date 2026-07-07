@@ -47,9 +47,13 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('You do not have permission to access this resource');
     }
 
+    // Explicit select: this guard runs on nearly every request, so it
+    // only ever fetches the two fields it actually checks - never
+    // passwordHash, passwordHistory, or mfaSecretEnc (OWASP A02:
+    // Cryptographic Failures - sensitive data exposure).
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { role: true },
+      select: { isActive: true, role: { select: { name: true } } },
     });
 
     if (!user || !user.isActive) {

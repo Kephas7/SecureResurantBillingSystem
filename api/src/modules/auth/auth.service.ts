@@ -60,7 +60,7 @@ export class AuthService {
   async register(dto: RegisterDto): Promise<{ id: string; email: string }> {
     const email = dto.email.toLowerCase();
 
-    const existing = await this.prisma.user.findUnique({ where: { email } });
+    const existing = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (existing) {
       throw new ConflictException('An account with this email already exists');
     }
@@ -80,6 +80,7 @@ export class AuthService {
         fullName: dto.fullName,
         roleId: role.id,
       },
+      select: { id: true, email: true },
     });
 
     await this.writeAuditLog(user.id, 'USER_REGISTERED', 'User', user.id);
@@ -106,9 +107,20 @@ export class AuthService {
 
     const email = dto.email.toLowerCase();
 
+    // Explicit select: only the fields login actually needs are fetched -
+    // passwordHash to verify, lockedUntil/isActive/mfaEnabled to check
+    // account state - never passwordHistory or mfaSecretEnc (OWASP A02:
+    // Cryptographic Failures - sensitive data exposure).
     const user = await this.prisma.user.findUnique({
       where: { email },
-      include: { role: true },
+      select: {
+        id: true,
+        passwordHash: true,
+        lockedUntil: true,
+        isActive: true,
+        mfaEnabled: true,
+        role: { select: { name: true } },
+      },
     });
 
     if (!user) {
@@ -139,6 +151,7 @@ export class AuthService {
     await this.prisma.user.update({
       where: { id: user.id },
       data: { failedLoginAttempts: 0, lockedUntil: null },
+      select: { id: true },
     });
 
     await this.writeAuditLog(user.id, 'LOGIN_SUCCESS', 'User', user.id, { ip: ipAddress });
@@ -153,7 +166,7 @@ export class AuthService {
   async getMe(userId: string): Promise<SafeUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { role: true },
+      select: { id: true, email: true, fullName: true, mfaEnabled: true, createdAt: true, role: { select: { name: true } } },
     });
 
     if (!user) {
@@ -173,7 +186,10 @@ export class AuthService {
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { passwordHash: true, passwordHistory: true },
+    });
     if (!user) {
       throw new UnauthorizedException('Authentication required');
     }
@@ -195,13 +211,17 @@ export class AuthService {
         passwordHistory,
         passwordChangedAt: new Date(),
       },
+      select: { id: true },
     });
 
     await this.writeAuditLog(userId, 'PASSWORD_CHANGED', 'User', userId);
   }
 
   async requestPasswordReset(email: string): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      select: { id: true },
+    });
 
     // SECURITY: always return success whether or not the email exists, so
     // this endpoint can't be used to enumerate registered accounts (OWASP
@@ -242,7 +262,10 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: resetToken.userId } });
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: resetToken.userId },
+      select: { passwordHistory: true },
+    });
 
     await this.assertNotRecentPassword(newPassword, user.passwordHistory);
 
@@ -250,8 +273,9 @@ export class AuthService {
     const passwordHistory = [newHash, ...user.passwordHistory].slice(0, PASSWORD_HISTORY_LIMIT);
 
     await this.prisma.user.update({
-      where: { id: user.id },
+      where: { id: resetToken.userId },
       data: { passwordHash: newHash, passwordHistory, passwordChangedAt: new Date() },
+      select: { id: true },
     });
 
     // Mark used rather than delete - keeps a record for the audit trail.
@@ -264,15 +288,15 @@ export class AuthService {
     // user, so an older, still-unused token (e.g. from an earlier request
     // the user abandoned) can't later be used to reset the password again.
     await this.prisma.passwordResetToken.updateMany({
-      where: { userId: user.id, usedAt: null, id: { not: resetToken.id } },
+      where: { userId: resetToken.userId, usedAt: null, id: { not: resetToken.id } },
       data: { usedAt: new Date() },
     });
 
-    await this.writeAuditLog(user.id, 'PASSWORD_RESET_COMPLETED', 'User', user.id);
+    await this.writeAuditLog(resetToken.userId, 'PASSWORD_RESET_COMPLETED', 'User', resetToken.userId);
   }
 
   async setupMfa(userId: string): Promise<{ secret: string; otpauthUrl: string; qrCodeDataUrl: string }> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
     if (!user) {
       throw new UnauthorizedException('Authentication required');
     }
@@ -299,13 +323,14 @@ export class AuthService {
     await this.prisma.user.update({
       where: { id: userId },
       data: { mfaEnabled: true, mfaSecretEnc },
+      select: { id: true },
     });
 
     await this.writeAuditLog(userId, 'MFA_ENABLED', 'User', userId);
   }
 
   async verifyMfaToken(userId: string, token: string): Promise<boolean> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { mfaSecretEnc: true } });
     if (!user?.mfaSecretEnc) {
       await this.writeAuditLog(userId, 'MFA_FAILED', 'User', userId);
       return false;
@@ -378,6 +403,7 @@ export class AuthService {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { failedLoginAttempts: { increment: 1 } },
+      select: { failedLoginAttempts: true },
     });
 
     await this.writeAuditLog(userId, 'LOGIN_FAILED', 'User', userId, {
@@ -391,6 +417,7 @@ export class AuthService {
       await this.prisma.user.update({
         where: { id: userId },
         data: { lockedUntil },
+        select: { id: true },
       });
 
       await this.writeAuditLog(userId, 'ACCOUNT_LOCKED', 'User', userId, { ip: ipAddress });

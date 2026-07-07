@@ -126,7 +126,10 @@ export class TablesService {
       throw new NotFoundException('Table not found');
     }
 
-    const waiter = await this.prisma.user.findUnique({ where: { id: dto.waiterId }, include: { role: true } });
+    const waiter = await this.prisma.user.findUnique({
+      where: { id: dto.waiterId },
+      select: { role: { select: { name: true } } },
+    });
     if (!waiter || waiter.role.name !== 'WAITER') {
       throw new NotFoundException('Waiter not found');
     }

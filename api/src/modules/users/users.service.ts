@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { CreateUserDto, UpdateUserDto } from './users.dto';
@@ -16,6 +17,26 @@ export interface SafeUser {
   lockedUntil: Date | null;
 }
 
+// Explicit select (rather than a bare findMany/findUnique or
+// include: { role: true }, both of which return every scalar column by
+// default) so passwordHash, passwordHistory, and mfaSecretEnc are never
+// fetched for a code path whose only job is returning safe fields to an
+// admin's user-management screen. Relying on toSafeUser() below to strip
+// them after the fact would still work, but this way the sensitive
+// columns never leave the database in the first place (OWASP A02:
+// Cryptographic Failures - sensitive data exposure).
+const SAFE_USER_SELECT = {
+  id: true,
+  email: true,
+  fullName: true,
+  isActive: true,
+  mfaEnabled: true,
+  createdAt: true,
+  failedLoginAttempts: true,
+  lockedUntil: true,
+  role: { select: { name: true } },
+} satisfies Prisma.UserSelect;
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -25,7 +46,7 @@ export class UsersService {
 
   async findAll(): Promise<SafeUser[]> {
     const users = await this.prisma.user.findMany({
-      include: { role: true },
+      select: SAFE_USER_SELECT,
       orderBy: { createdAt: 'asc' },
     });
 
@@ -33,7 +54,7 @@ export class UsersService {
   }
 
   async findOne(id: string): Promise<SafeUser> {
-    const user = await this.prisma.user.findUnique({ where: { id }, include: { role: true } });
+    const user = await this.prisma.user.findUnique({ where: { id }, select: SAFE_USER_SELECT });
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -44,7 +65,7 @@ export class UsersService {
   async create(dto: CreateUserDto, actorId: string): Promise<SafeUser> {
     const email = dto.email.toLowerCase();
 
-    const existing = await this.prisma.user.findUnique({ where: { email } });
+    const existing = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (existing) {
       throw new ConflictException('An account with this email already exists');
     }
@@ -67,7 +88,7 @@ export class UsersService {
         fullName: dto.fullName,
         roleId: role.id,
       },
-      include: { role: true },
+      select: SAFE_USER_SELECT,
     });
 
     await this.auditLog.write(actorId, 'USER_CREATED', 'User', user.id, { roleName: dto.roleName });
@@ -80,7 +101,7 @@ export class UsersService {
       throw new ForbiddenException('Cannot modify your own account through this endpoint');
     }
 
-    const existing = await this.prisma.user.findUnique({ where: { id } });
+    const existing = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
     if (!existing) {
       throw new NotFoundException('User not found');
     }
@@ -101,7 +122,7 @@ export class UsersService {
         roleId,
         isActive: dto.isActive,
       },
-      include: { role: true },
+      select: SAFE_USER_SELECT,
     });
 
     // Metadata records which fields changed - never the password, which
@@ -120,7 +141,7 @@ export class UsersService {
       throw new ForbiddenException('Cannot deactivate your own account');
     }
 
-    const existing = await this.prisma.user.findUnique({ where: { id } });
+    const existing = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
     if (!existing) {
       throw new NotFoundException('User not found');
     }
@@ -130,13 +151,13 @@ export class UsersService {
     // constraint or silently orphan/null out historical audit evidence.
     // Deactivation preserves the audit trail while preventing login (the
     // isActive check happens in AuthService.login()).
-    await this.prisma.user.update({ where: { id }, data: { isActive: false } });
+    await this.prisma.user.update({ where: { id }, data: { isActive: false }, select: { id: true } });
 
     await this.auditLog.write(actorId, 'USER_DEACTIVATED', 'User', id);
   }
 
   async unlockAccount(id: string, actorId: string): Promise<void> {
-    const existing = await this.prisma.user.findUnique({ where: { id } });
+    const existing = await this.prisma.user.findUnique({ where: { id }, select: { id: true } });
     if (!existing) {
       throw new NotFoundException('User not found');
     }
@@ -144,6 +165,7 @@ export class UsersService {
     await this.prisma.user.update({
       where: { id },
       data: { failedLoginAttempts: 0, lockedUntil: null },
+      select: { id: true },
     });
 
     await this.auditLog.write(actorId, 'ACCOUNT_UNLOCKED', 'User', id);
