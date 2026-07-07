@@ -463,3 +463,67 @@ export const inventoryApi = {
   updateSupplier: (id: string, data: Partial<CreateSupplierPayload>) =>
     apiClient.patch<Supplier>(`/inventory/suppliers/${id}`, data).then((res) => res.data),
 };
+
+export interface RevenueByDay {
+  date: string;
+  revenue: string;
+}
+
+export interface TopMenuItem {
+  menuItemId: string;
+  name: string;
+  quantitySold: number;
+  revenueContribution: string;
+}
+
+export interface SalesReport {
+  totalRevenue: string;
+  totalInvoices: number;
+  totalOrders: number;
+  averageOrderValue: string;
+  revenueByDay: RevenueByDay[];
+  topMenuItems: TopMenuItem[];
+  paymentMethodBreakdown: Record<string, number>;
+}
+
+export interface InventoryReport {
+  totalIngredients: number;
+  lowStockItems: Ingredient[];
+  outOfStockItems: Ingredient[];
+}
+
+export interface WaiterStats {
+  waiterId: string;
+  waiterName: string;
+  orderCount: number;
+  totalRevenue: string;
+}
+
+export interface StaffReport {
+  ordersPerWaiter: WaiterStats[];
+}
+
+export interface RefundsByReason {
+  reason: string;
+  count: number;
+}
+
+export interface RefundReport {
+  totalRefunds: number;
+  totalRefundAmount: string;
+  refundsByReason: RefundsByReason[];
+  pendingRefunds: number;
+}
+
+export const reportsApi = {
+  getSales: (startDate: string, endDate: string) =>
+    apiClient.get<SalesReport>("/reports/sales", { params: { startDate, endDate } }).then((res) => res.data),
+
+  getInventory: () => apiClient.get<InventoryReport>("/reports/inventory").then((res) => res.data),
+
+  getStaff: (startDate: string, endDate: string) =>
+    apiClient.get<StaffReport>("/reports/staff", { params: { startDate, endDate } }).then((res) => res.data),
+
+  getRefunds: (startDate: string, endDate: string) =>
+    apiClient.get<RefundReport>("/reports/refunds", { params: { startDate, endDate } }).then((res) => res.data),
+};

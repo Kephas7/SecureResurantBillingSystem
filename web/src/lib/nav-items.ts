@@ -21,7 +21,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Billing", href: "/billing", roles: ["ADMIN", "CASHIER"] },
   { label: "Inventory", href: "/inventory", roles: ["ADMIN", "MANAGER"] },
   { label: "Refunds", href: "/manager/refunds", roles: ["ADMIN", "MANAGER"] },
-  { label: "Reports", href: "/reports", roles: ["MANAGER"], comingSoon: true },
+  { label: "Reports", href: "/reports", roles: ["ADMIN", "MANAGER"] },
 ];
 
 export function navItemsForRole(role: string): NavItem[] {
