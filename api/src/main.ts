@@ -5,7 +5,7 @@ import helmet from "helmet";
 import session from "express-session";
 import RedisStore from "connect-redis";
 import Redis from "ioredis";
-import { json, urlencoded } from "express";
+import { json, urlencoded, Request, Response, NextFunction } from "express";
 import { AppModule } from "./app.module";
 
 // HTTP security headers are a defence-in-depth layer. They do not
@@ -159,6 +159,44 @@ async function bootstrap() {
   // --- Generic error responses: do not leak stack traces / internals ---
   // Registered globally as APP_FILTER in AppModule (GlobalExceptionFilter)
   // so it applies to every route without per-controller wiring.
+
+  // SECURITY FIX — FINDING-005
+  // Express middleware errors (body size limit, CORS) bypass the
+  // NestJS GlobalExceptionFilter because they occur before the
+  // NestJS request pipeline - they are thrown by the json()/cors()
+  // middleware registered above, as plain Error objects, not
+  // NestJS HttpExceptions, so GlobalExceptionFilter's
+  // `instanceof HttpException` check never matches them and they
+  // fell through to a raw Express 500. This Express-level error
+  // handler catches them and returns clean JSON responses
+  // consistent with the rest of the API's error format. Without
+  // this, oversized payloads and CORS rejections returned a
+  // generic 500 instead of 413/403, undermining monitoring/alerting
+  // clarity for what are actually working-as-intended security
+  // rejections, not application faults.
+  // Must be registered last (Express error-handling middleware -
+  // identified by its 4-argument signature - only catches errors
+  // from middleware/routes registered before it in the stack).
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.use(
+    (err: { status?: number; type?: string; message?: string }, _req: Request, res: Response, _next: NextFunction) => {
+      const isPayloadTooLarge = err.type === "entity.too.large";
+      const isCorsRejection = err.message?.startsWith("CORS:") ?? false;
+
+      const status = isPayloadTooLarge ? 413 : isCorsRejection ? 403 : (err.status ?? 500);
+      const message = isPayloadTooLarge
+        ? "Request payload too large (max 100kb)"
+        : isCorsRejection
+          ? "Origin not allowed"
+          : (err.message ?? "An error occurred");
+
+      res.status(status).json({
+        statusCode: status,
+        message,
+        timestamp: new Date().toISOString(),
+      });
+    },
+  );
 
   const port = process.env.API_PORT || 4000;
   await app.listen(port);
