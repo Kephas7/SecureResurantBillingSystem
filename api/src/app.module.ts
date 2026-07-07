@@ -11,6 +11,7 @@ import { AuditModule } from "./modules/audit/audit.module";
 import { OrdersModule } from "./modules/orders/orders.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { BillingModule } from "./modules/billing/billing.module";
+import { ReportsModule } from "./modules/reports/reports.module";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
 import { SessionGuard } from "./common/guards/session.guard";
@@ -36,6 +37,7 @@ import { RolesGuard } from "./common/guards/roles.guard";
     OrdersModule,
     InventoryModule,
     BillingModule,
+    ReportsModule,
   ],
   controllers: [],
   providers: [
