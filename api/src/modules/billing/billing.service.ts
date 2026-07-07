@@ -240,6 +240,20 @@ export class BillingService {
       throw new ConflictException('Refund request has already been decided');
     }
 
+    // SECURITY FIX — FINDING-001
+    // Separation of duties: the person who requested the refund
+    // cannot be the same person who approves it.
+    // This prevents a single Manager from both initiating and
+    // authorising a financial reversal without a second pair of eyes.
+    // (PCI-DSS Requirement 6.3 — separation of duties;
+    //  OWASP Testing Guide — Business Logic Testing OTG-BUSLOGIC-008)
+    if (refund.requestedById === managerId) {
+      throw new ForbiddenException(
+        'You cannot approve a refund that you requested. ' +
+          'Another manager or admin must approve it.',
+      );
+    }
+
     const newInvoiceStatus = refund.amount.equals(refund.invoice.totalAmount)
       ? InvoiceStatus.REFUNDED
       : InvoiceStatus.PARTIALLY_REFUNDED;
