@@ -27,3 +27,18 @@ export function canCreateOrders(role: string): boolean {
 export function canViewKitchenQueue(role: string): boolean {
   return hasRole(role, "KITCHEN", "MANAGER", "ADMIN");
 }
+
+// Presentation-only mapping from role -> badge colour class, shared by
+// the sidebar's user badge and the user management table so the same
+// role always reads the same colour everywhere in the app.
+const ROLE_BADGE_CLASSES: Record<string, string> = {
+  ADMIN: "badge-purple",
+  MANAGER: "badge-blue",
+  CASHIER: "badge-cyan",
+  WAITER: "badge-green",
+  KITCHEN: "badge-amber",
+};
+
+export function roleBadgeClass(role: string): string {
+  return ROLE_BADGE_CLASSES[role] ?? "badge-gray";
+}
