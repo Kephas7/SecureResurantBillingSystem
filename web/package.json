@@ -11,6 +11,8 @@
   "dependencies": {
     "@hcaptcha/react-hcaptcha": "^2.0.2",
     "@hookform/resolvers": "^5.4.0",
+    "@stripe/react-stripe-js": "^6.7.0",
+    "@stripe/stripe-js": "^9.9.0",
     "axios": "^1.18.1",
     "js-cookie": "^3.0.8",
     "lucide-react": "^1.22.0",
