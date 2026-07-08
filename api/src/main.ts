@@ -48,6 +48,19 @@ async function bootstrap() {
       // iframe on an attacker's page to trick users into clicking
       // hidden UI elements.
       frameguard: { action: "deny" },
+      // Helmet's default (Cross-Origin-Resource-Policy: same-origin)
+      // blocks the browser from loading ANY response cross-origin as a
+      // subresource - including <img> tags. That default is correct for
+      // this API's JSON endpoints (which are already independently
+      // protected by the exact-match CORS policy below), but it also
+      // blocks the web app (a different origin: :3000 vs this API's
+      // :4000) from ever rendering images served from /uploads/, since
+      // <img> loads are governed by CORP, not by CORS/credentials.
+      // Set to "cross-origin" so publicly-servable, non-sensitive static
+      // assets (uploaded menu item images) can be embedded from the
+      // frontend's origin, while CORS continues to gate every JSON
+      // endpoint's actual data. (MDN/OWASP - Cross-Origin-Resource-Policy)
+      crossOriginResourcePolicy: { policy: "cross-origin" },
       // Prevents MIME-type sniffing attacks - stops the browser from
       // re-interpreting a response as a different content type than
       // declared (e.g. treating an uploaded "image" as executable JS).
