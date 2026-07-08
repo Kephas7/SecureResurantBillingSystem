@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus, AlertCircle, X } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import { menuApi, type MenuCategory, type MenuItem } from "../../../lib/api";
+import { ImageUpload } from "../../../components/menu/ImageUpload";
 
 interface CategoryFormState {
   name: string;
@@ -15,9 +16,17 @@ interface ItemFormState {
   price: string;
   categoryId: string;
   isAvailable: boolean;
+  imageUrl: string | null;
 }
 
-const EMPTY_ITEM_FORM: ItemFormState = { name: "", description: "", price: "", categoryId: "", isAvailable: true };
+const EMPTY_ITEM_FORM: ItemFormState = {
+  name: "",
+  description: "",
+  price: "",
+  categoryId: "",
+  isAvailable: true,
+  imageUrl: null,
+};
 
 export default function MenuPage(): JSX.Element {
   const { user, isLoading: authLoading } = useAuth();
@@ -135,6 +144,7 @@ export default function MenuPage(): JSX.Element {
         price: Number(itemForm.price),
         categoryId: itemForm.categoryId,
         isAvailable: itemForm.isAvailable,
+        imageUrl: itemForm.imageUrl ?? undefined,
       };
       if (editingItemId) {
         await menuApi.updateItem(editingItemId, payload);
@@ -158,6 +168,7 @@ export default function MenuPage(): JSX.Element {
       price: item.price,
       categoryId: item.categoryId,
       isAvailable: item.isAvailable,
+      imageUrl: item.imageUrl ?? null,
     });
     setActionError(null);
     setShowItemPanel(true);
@@ -403,6 +414,15 @@ export default function MenuPage(): JSX.Element {
             </div>
             <form onSubmit={handleItemSubmit} style={{ display: "contents" }}>
               <div className="panel-body">
+                <div className="form-group">
+                  <label className="form-label">Image</label>
+                  <ImageUpload
+                    currentImageUrl={itemForm.imageUrl}
+                    onUpload={(url) => setItemForm((prev) => ({ ...prev, imageUrl: url }))}
+                    onDelete={() => setItemForm((prev) => ({ ...prev, imageUrl: null }))}
+                    disabled={isSaving}
+                  />
+                </div>
                 <div className="form-group">
                   <label className="form-label" htmlFor="item-name">
                     Name

@@ -189,6 +189,10 @@ export interface MenuItem {
   isAvailable: boolean;
   categoryId: string;
   category?: { name: string };
+  // Relative path (e.g. "/uploads/<uuid>.jpg") returned by the upload
+  // endpoint - the full URL is constructed by prepending
+  // NEXT_PUBLIC_API_URL wherever this is rendered. null = no image.
+  imageUrl?: string | null;
 }
 
 export interface CreateCategoryPayload {
@@ -201,6 +205,7 @@ export interface CreateMenuItemPayload {
   price: number;
   categoryId: string;
   isAvailable?: boolean;
+  imageUrl?: string;
 }
 
 export const menuApi = {
@@ -226,6 +231,26 @@ export const menuApi = {
   toggleItem: (id: string) => apiClient.patch<MenuItem>(`/menu/items/${id}/toggle`).then((res) => res.data),
 
   deleteItem: (id: string) => apiClient.delete(`/menu/items/${id}`).then((res) => res.data),
+
+  uploadMenuItemImage: (file: File) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    // The apiClient instance defaults every request to
+    // Content-Type: application/json - explicitly unsetting it here
+    // lets axios detect the FormData body itself and set the correct
+    // multipart/form-data header with its auto-generated boundary.
+    // Setting it manually to "multipart/form-data" without a boundary
+    // (or leaving the default json header in place) would produce a
+    // body the server's multipart parser cannot read.
+    return apiClient
+      .post<{ imageUrl: string }>("/upload/menu-item-image", formData, {
+        headers: { "Content-Type": undefined },
+      })
+      .then((res) => res.data);
+  },
+
+  deleteMenuItemImage: (filename: string) =>
+    apiClient.delete<void>(`/upload/menu-item-image/${filename}`).then((res) => res.data),
 };
 
 export interface AuditLogEntry {
