@@ -3,21 +3,9 @@
 import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Minus, AlertCircle, X, ChevronDown, ChevronRight, UtensilsCrossed } from "lucide-react";
+import { Plus, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
-import {
-  ordersApi,
-  tablesApi,
-  menuApi,
-  type Order,
-  type OrderStatus,
-  type OrderStatusHistoryEntry,
-  type RestaurantTable,
-  type MenuItem,
-  type CreateOrderItemPayload,
-} from "../../../lib/api";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+import { ordersApi, type Order, type OrderStatus, type OrderStatusHistoryEntry } from "../../../lib/api";
 
 const STATUS_OPTIONS: OrderStatus[] = [
   "OPEN",
@@ -43,11 +31,6 @@ function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
-interface DraftLine {
-  quantity: number;
-  notes: string;
-}
-
 export default function OrdersPage(): JSX.Element | null {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
@@ -60,14 +43,6 @@ export default function OrdersPage(): JSX.Element | null {
   const [history, setHistory] = useState<OrderStatusHistoryEntry[] | null>(null);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "">("");
 
-  // Waiter's create-order panel state
-  const [showCreatePanel, setShowCreatePanel] = useState(false);
-  const [availableTables, setAvailableTables] = useState<RestaurantTable[]>([]);
-  const [availableItems, setAvailableItems] = useState<MenuItem[]>([]);
-  const [selectedTableId, setSelectedTableId] = useState("");
-  const [draftLines, setDraftLines] = useState<Record<string, DraftLine>>({});
-  const [isCreating, setIsCreating] = useState(false);
-
   useEffect(() => {
     if (!authLoading && user?.role === "KITCHEN") {
       router.replace("/kitchen");
@@ -79,13 +54,6 @@ export default function OrdersPage(): JSX.Element | null {
       void loadOrders();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
-  useEffect(() => {
-    if (user?.role === "WAITER") {
-      tablesApi.getAvailable().then(setAvailableTables).catch(() => undefined);
-      menuApi.getAvailableItems().then(setAvailableItems).catch(() => undefined);
-    }
   }, [user]);
 
   async function loadOrders(): Promise<void> {
@@ -112,57 +80,6 @@ export default function OrdersPage(): JSX.Element | null {
       setHistory(data);
     } catch {
       setHistory([]);
-    }
-  }
-
-  function openCreatePanel(): void {
-    setSelectedTableId("");
-    setDraftLines({});
-    setActionError(null);
-    setShowCreatePanel(true);
-  }
-
-  function closeCreatePanel(): void {
-    setShowCreatePanel(false);
-  }
-
-  function setQuantity(menuItemId: string, quantity: number): void {
-    setDraftLines((prev) => {
-      const next = { ...prev };
-      if (quantity <= 0) {
-        delete next[menuItemId];
-      } else {
-        next[menuItemId] = { quantity, notes: prev[menuItemId]?.notes ?? "" };
-      }
-      return next;
-    });
-  }
-
-  function setNotes(menuItemId: string, notes: string): void {
-    setDraftLines((prev) => ({
-      ...prev,
-      [menuItemId]: { quantity: prev[menuItemId]?.quantity ?? 1, notes },
-    }));
-  }
-
-  async function handleCreateOrder(e: React.FormEvent): Promise<void> {
-    e.preventDefault();
-    setIsCreating(true);
-    setActionError(null);
-    try {
-      const items: CreateOrderItemPayload[] = Object.entries(draftLines).map(([menuItemId, line]) => ({
-        menuItemId,
-        quantity: line.quantity,
-        notes: line.notes || undefined,
-      }));
-      await ordersApi.create({ tableId: selectedTableId, items });
-      closeCreatePanel();
-      await loadOrders();
-      tablesApi.getAvailable().then(setAvailableTables).catch(() => undefined);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to create order");
-    } finally {
-      setIsCreating(false);
     }
   }
 
@@ -203,18 +120,6 @@ export default function OrdersPage(): JSX.Element | null {
   const visibleOrders = (orders ?? []).filter((order) => !statusFilter || order.status === statusFilter);
   const isManagerOrAdmin = user.role === "MANAGER" || user.role === "ADMIN";
 
-  // Group available items by category name for the create-order panel.
-  const itemsByCategory = availableItems.reduce<Record<string, MenuItem[]>>((acc, item) => {
-    const key = item.category?.name ?? "Other";
-    (acc[key] ??= []).push(item);
-    return acc;
-  }, {});
-
-  const runningTotal = Object.entries(draftLines).reduce((sum, [menuItemId, line]) => {
-    const item = availableItems.find((i) => i.id === menuItemId);
-    return sum + (item ? Number(item.price) * line.quantity : 0);
-  }, 0);
-
   return (
     <>
       <div className="page-header">
@@ -239,16 +144,16 @@ export default function OrdersPage(): JSX.Element | null {
             </select>
           )}
           {user.role === "WAITER" && (
-            <button type="button" className="btn btn-primary" onClick={openCreatePanel}>
+            <Link href="/orders/new" className="btn btn-primary">
               <Plus size={16} />
               Create Order
-            </button>
+            </Link>
           )}
         </div>
       </div>
 
       <div className="page-content">
-        {actionError && !showCreatePanel && (
+        {actionError && (
           <div className="alert alert-danger">
             <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
             <span>{actionError}</span>
@@ -407,166 +312,6 @@ export default function OrdersPage(): JSX.Element | null {
           </div>
         </div>
       </div>
-
-      {showCreatePanel && (
-        <div className="panel-overlay" onClick={closeCreatePanel}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">Create Order</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={closeCreatePanel} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleCreateOrder} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <div className="form-group">
-                  <label className="form-label">Table</label>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.5rem" }}>
-                    {availableTables.map((table) => {
-                      const selected = selectedTableId === table.id;
-                      return (
-                        <button
-                          key={table.id}
-                          type="button"
-                          onClick={() => setSelectedTableId(table.id)}
-                          style={{
-                            padding: "0.625rem 0.5rem",
-                            borderRadius: "var(--radius)",
-                            border: `1px solid ${selected ? "var(--brand)" : "var(--border)"}`,
-                            background: selected ? "var(--brand-light)" : "var(--surface)",
-                            color: selected ? "var(--brand)" : "var(--text-primary)",
-                            cursor: "pointer",
-                            textAlign: "center",
-                            fontSize: "0.8125rem",
-                            fontWeight: 600,
-                          }}
-                        >
-                          Table {table.number}
-                        </button>
-                      );
-                    })}
-                    {availableTables.length === 0 && <p className="text-muted text-sm">No available tables.</p>}
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Items</label>
-                  {Object.entries(itemsByCategory).map(([categoryName, categoryItems]) => (
-                    <div key={categoryName} style={{ marginBottom: "1rem" }}>
-                      <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-muted)", marginBottom: "0.375rem" }}>
-                        {categoryName}
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-                        {categoryItems.map((item) => {
-                          const line = draftLines[item.id];
-                          const quantity = line?.quantity ?? 0;
-                          return (
-                            <div key={item.id}>
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  {item.imageUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={`${API_URL}${item.imageUrl}`}
-                                      alt={item.name}
-                                      style={{
-                                        width: "60px",
-                                        height: "60px",
-                                        objectFit: "cover",
-                                        borderRadius: "var(--radius-sm)",
-                                        flexShrink: 0,
-                                      }}
-                                    />
-                                  ) : (
-                                    <div
-                                      style={{
-                                        width: "60px",
-                                        height: "60px",
-                                        borderRadius: "var(--radius-sm)",
-                                        background: "var(--bg)",
-                                        border: "1px solid var(--border)",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      <UtensilsCrossed size={20} style={{ color: "var(--text-muted)" }} />
-                                    </div>
-                                  )}
-                                  <div>
-                                    <div style={{ fontSize: "0.8125rem", fontWeight: 500 }}>{item.name}</div>
-                                    <div className="text-muted text-sm">${item.price}</div>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    className="btn btn-secondary btn-icon btn-sm"
-                                    onClick={() => setQuantity(item.id, Math.max(0, quantity - 1))}
-                                    disabled={quantity === 0}
-                                    aria-label={`Decrease ${item.name}`}
-                                  >
-                                    <Minus size={12} />
-                                  </button>
-                                  <span style={{ minWidth: "1.25rem", textAlign: "center", fontSize: "0.8125rem" }}>{quantity}</span>
-                                  <button
-                                    type="button"
-                                    className="btn btn-secondary btn-icon btn-sm"
-                                    onClick={() => setQuantity(item.id, quantity + 1)}
-                                    aria-label={`Increase ${item.name}`}
-                                  >
-                                    <Plus size={12} />
-                                  </button>
-                                </div>
-                              </div>
-                              {quantity > 0 && (
-                                <input
-                                  type="text"
-                                  placeholder="Notes (optional)"
-                                  value={line?.notes ?? ""}
-                                  onChange={(e) => setNotes(item.id, e.target.value)}
-                                  className="form-input"
-                                  style={{ marginTop: "0.375rem" }}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
-              </div>
-              <div className="panel-footer" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.75rem" }}>
-                <div className="flex justify-between font-semibold" style={{ fontSize: "0.9375rem" }}>
-                  <span>Total</span>
-                  <span>${runningTotal.toFixed(2)}</span>
-                </div>
-                <div className="flex gap-3" style={{ justifyContent: "flex-end" }}>
-                  <button type="button" className="btn btn-secondary" onClick={closeCreatePanel}>
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={isCreating || Object.keys(draftLines).length === 0 || !selectedTableId}
-                  >
-                    {isCreating ? "Creating..." : "Submit Order"}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   );
 }
