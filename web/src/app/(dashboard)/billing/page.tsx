@@ -12,6 +12,7 @@ import {
   type PaymentMethod,
   type PaginatedInvoices,
 } from "../../../lib/api";
+import { StripePaymentForm } from "../../../components/billing/StripePaymentForm";
 
 // Display-only estimate to preview the total before submission. The
 // authoritative calculation (including the real TAX_RATE from env) is
@@ -56,6 +57,9 @@ export default function BillingPage(): JSX.Element {
   const [refundAmount, setRefundAmount] = useState("");
   const [refundReason, setRefundReason] = useState("");
   const [isRefunding, setIsRefunding] = useState(false);
+
+  const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
+  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
 
   useEffect(() => {
     void loadAll();
@@ -122,6 +126,38 @@ export default function BillingPage(): JSX.Element {
     } finally {
       setBusyId(null);
     }
+  }
+
+  async function openPaymentModal(invoice: Invoice): Promise<void> {
+    setBusyId(invoice.id);
+    setActionError(null);
+    try {
+      // clientSecret is never logged - only held in component state and
+      // handed straight to Stripe's Elements provider (see
+      // StripePaymentForm), which is the only thing allowed to use it.
+      const { clientSecret } = await billingApi.createPaymentIntent(invoice.id);
+      setPaymentInvoice(invoice);
+      setPaymentClientSecret(clientSecret);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to start Stripe payment");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function closePaymentModal(): void {
+    setPaymentInvoice(null);
+    setPaymentClientSecret(null);
+  }
+
+  async function handlePaymentSuccess(): Promise<void> {
+    // The invoice's status here still reflects what the webhook has
+    // processed so far - Stripe's webhook (not this browser confirming
+    // the charge) is the sole authority that actually marks the invoice
+    // PAID, so a very recent payment may briefly still show UNPAID
+    // until the webhook is delivered and processed.
+    closePaymentModal();
+    await loadAll();
   }
 
   function openRefundModal(invoice: Invoice): void {
@@ -249,14 +285,24 @@ export default function BillingPage(): JSX.Element {
                         <td>
                           <div className="flex gap-2">
                             {invoice.status === "UNPAID" && (
-                              <button
-                                type="button"
-                                className="btn btn-success btn-sm"
-                                disabled={busyId === invoice.id}
-                                onClick={() => void handleConfirmPayment(invoice.id)}
-                              >
-                                {busyId === invoice.id ? "..." : "Confirm Payment"}
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={busyId === invoice.id}
+                                  onClick={() => void openPaymentModal(invoice)}
+                                >
+                                  {busyId === invoice.id ? "..." : "Pay with Stripe"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-success btn-sm"
+                                  disabled={busyId === invoice.id}
+                                  onClick={() => void handleConfirmPayment(invoice.id)}
+                                >
+                                  {busyId === invoice.id ? "..." : "Confirm Payment"}
+                                </button>
+                              </>
                             )}
                             {invoice.status === "PAID" && (
                               <button type="button" className="btn btn-secondary btn-sm" onClick={() => openRefundModal(invoice)}>
@@ -464,6 +510,25 @@ export default function BillingPage(): JSX.Element {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {paymentInvoice && paymentClientSecret && (
+        <div className="panel-overlay" onClick={closePaymentModal}>
+          <div className="panel" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-header">
+              <h3 className="panel-title">Pay {paymentInvoice.invoiceNumber} with Stripe</h3>
+              <button type="button" className="btn btn-icon btn-secondary" onClick={closePaymentModal} aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <StripePaymentForm
+              clientSecret={paymentClientSecret}
+              amountLabel={`$${money(paymentInvoice.totalAmount)}`}
+              onSuccess={() => void handlePaymentSuccess()}
+              onCancel={closePaymentModal}
+            />
           </div>
         </div>
       )}

@@ -354,7 +354,7 @@ export const ordersApi = {
     apiClient.get<OrderStatusHistoryEntry[]>(`/orders/${id}/history`).then((res) => res.data),
 };
 
-export type PaymentMethod = "CASH" | "CARD" | "MOBILE";
+export type PaymentMethod = "CASH" | "CARD" | "MOBILE" | "STRIPE";
 export type InvoiceStatus = "UNPAID" | "PAID" | "REFUNDED" | "PARTIALLY_REFUNDED" | "VOID";
 export type RefundStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -415,6 +415,13 @@ export const billingApi = {
     apiClient.post<Invoice>("/billing/invoices", data).then((res) => res.data),
 
   confirmPayment: (id: string) => apiClient.post<Invoice>(`/billing/invoices/${id}/confirm`).then((res) => res.data),
+
+  // Returns a Stripe PaymentIntent clientSecret - never the invoice's
+  // paid status directly. The invoice only becomes PAID once Stripe's
+  // webhook confirms the charge server-side (see billing.controller.ts
+  // POST /billing/webhooks/stripe).
+  createPaymentIntent: (id: string) =>
+    apiClient.post<{ clientSecret: string }>(`/billing/invoices/${id}/create-payment-intent`).then((res) => res.data),
 
   requestRefund: (id: string, data: { amount: number; reason: string }) =>
     apiClient.post<RefundRequest>(`/billing/invoices/${id}/refund`, data).then((res) => res.data),
