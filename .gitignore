@@ -40,3 +40,11 @@ coverage/
 *.pem
 *.key
 docs/pentest/raw-scans/
+
+# Uploaded images — never commit user content to the repo
+api/uploads/*.jpg
+api/uploads/*.jpeg
+api/uploads/*.png
+api/uploads/*.webp
+api/uploads/*.gif
+!api/uploads/.gitkeep
