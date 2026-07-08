@@ -37,6 +37,17 @@ export class CreateMenuItemDto {
   @IsBoolean()
   @IsOptional()
   isAvailable?: boolean;
+
+  // Set via the separate POST /upload/menu-item-image endpoint, which
+  // returns this relative path - never accepted as a raw client-supplied
+  // URL/filesystem path here (that would let a client point imageUrl at
+  // an arbitrary external URL or attempt SSRF-adjacent tricks). MaxLength
+  // is generous but bounded since this still flows through the same
+  // global request-body validation as every other field.
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  imageUrl?: string;
 }
 
 export class UpdateMenuItemDto {
@@ -64,4 +75,9 @@ export class UpdateMenuItemDto {
   @IsBoolean()
   @IsOptional()
   isAvailable?: boolean;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  imageUrl?: string;
 }

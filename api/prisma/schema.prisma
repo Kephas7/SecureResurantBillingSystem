@@ -138,6 +138,11 @@ model MenuItem {
   description String?
   price       Decimal       @db.Decimal(10, 2)
   isAvailable Boolean       @default(true)
+  // Relative path only (e.g. "/uploads/<uuid>.jpg") - never the original
+  // filename, never an absolute URL. The frontend prepends
+  // NEXT_PUBLIC_API_URL, keeping the API portable across environments.
+  // null = no image uploaded yet.
+  imageUrl    String?
   categoryId  String
   category    MenuCategory  @relation(fields: [categoryId], references: [id])
   ingredients MenuItemIngredient[]

@@ -127,6 +127,7 @@ export class MenuService {
         price: dto.price,
         categoryId: dto.categoryId,
         isAvailable: dto.isAvailable ?? true,
+        imageUrl: dto.imageUrl,
       },
     });
 
@@ -165,6 +166,7 @@ export class MenuService {
         price: dto.price,
         categoryId: dto.categoryId,
         isAvailable: dto.isAvailable,
+        imageUrl: dto.imageUrl,
       },
     });
 
