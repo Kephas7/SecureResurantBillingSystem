@@ -83,7 +83,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span className={`badge ${roleBadgeClass(user.role)}`}>{user.role}</span>
             </div>
           </div>
-          <button type="button" className="nav-link" onClick={() => void handleLogout()}>
+          <button type="button" className="btn btn-primary w-full" style={{ justifyContent: "center" }} onClick={() => void handleLogout()}>
             <LogOut size={16} />
             Logout
           </button>
