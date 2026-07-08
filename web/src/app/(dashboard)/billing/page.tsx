@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Banknote, CreditCard, Smartphone, AlertCircle, X } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import {
   billingApi,
   ordersApi,
   type Order,
   type Invoice,
+  type InvoiceStatus,
   type PaymentMethod,
   type PaginatedInvoices,
 } from "../../../lib/api";
@@ -17,13 +19,19 @@ import {
 // just so the cashier isn't surprised by the confirmed total.
 const DISPLAY_TAX_RATE = 0.13;
 
-const STATUS_COLOURS: Record<string, string> = {
-  UNPAID: "var(--color-warning)",
-  PAID: "var(--color-success)",
-  REFUNDED: "var(--color-danger)",
-  PARTIALLY_REFUNDED: "var(--color-danger)",
-  VOID: "var(--color-text-muted)",
+const STATUS_BADGE_CLASS: Record<InvoiceStatus, string> = {
+  UNPAID: "badge-amber",
+  PAID: "badge-green",
+  REFUNDED: "badge-red",
+  PARTIALLY_REFUNDED: "badge-red",
+  VOID: "badge-gray",
 };
+
+const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: typeof Banknote }[] = [
+  { value: "CASH", label: "Cash", icon: Banknote },
+  { value: "CARD", label: "Card", icon: CreditCard },
+  { value: "MOBILE", label: "Mobile", icon: Smartphone },
+];
 
 function money(value: string | number): string {
   return Number(value).toFixed(2);
@@ -39,7 +47,7 @@ export default function BillingPage(): JSX.Element {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [invoiceFormOrderId, setInvoiceFormOrderId] = useState<string | null>(null);
+  const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [discountInput, setDiscountInput] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -65,11 +73,15 @@ export default function BillingPage(): JSX.Element {
     }
   }
 
-  function openInvoiceForm(orderId: string): void {
-    setInvoiceFormOrderId(orderId);
+  function openInvoicePanel(order: Order): void {
+    setInvoiceOrder(order);
     setPaymentMethod("CASH");
     setDiscountInput("");
     setActionError(null);
+  }
+
+  function closeInvoicePanel(): void {
+    setInvoiceOrder(null);
   }
 
   function computeTotals(order: Order, discount: number): { subtotal: number; tax: number; total: number } {
@@ -79,17 +91,18 @@ export default function BillingPage(): JSX.Element {
     return { subtotal, tax, total };
   }
 
-  async function handleCreateInvoice(e: React.FormEvent, order: Order): Promise<void> {
+  async function handleCreateInvoice(e: React.FormEvent): Promise<void> {
     e.preventDefault();
+    if (!invoiceOrder) return;
     setIsCreating(true);
     setActionError(null);
     try {
       await billingApi.createInvoice({
-        orderId: order.id,
+        orderId: invoiceOrder.id,
         paymentMethod,
         discountAmount: discountInput ? Number(discountInput) : undefined,
       });
-      setInvoiceFormOrderId(null);
+      closeInvoicePanel();
       await loadAll();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to create invoice");
@@ -142,226 +155,318 @@ export default function BillingPage(): JSX.Element {
     return <p>Loading...</p>;
   }
 
+  const { subtotal, tax, total } = invoiceOrder
+    ? computeTotals(invoiceOrder, discountInput ? Number(discountInput) : 0)
+    : { subtotal: 0, tax: 0, total: 0 };
+
   return (
-    <div>
-      <h1 style={{ marginBottom: "1.5rem" }}>Billing</h1>
+    <>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Billing</h1>
+          <p className="page-subtitle">Invoices, payments, and receipts.</p>
+        </div>
+      </div>
 
-      {actionError && <p className="error-msg">{actionError}</p>}
-      {loadError && <p className="error-msg">{loadError}</p>}
-
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={{ marginBottom: "1rem" }}>Billable Orders</h2>
-
-        {!billableOrders && <p>Loading...</p>}
-        {billableOrders && billableOrders.length === 0 && (
-          <p style={{ color: "var(--color-text-muted)" }}>No orders ready to bill.</p>
+      <div className="page-content">
+        {actionError && !invoiceOrder && !refundModalInvoice && (
+          <div className="alert alert-danger">
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+            <span>{actionError}</span>
+          </div>
+        )}
+        {loadError && (
+          <div className="alert alert-danger">
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+            <span>{loadError}</span>
+          </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "1rem" }}>
+        <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, marginBottom: "1rem" }}>Billable Orders</h2>
+
+        {!billableOrders && <p>Loading...</p>}
+        {billableOrders && billableOrders.length === 0 && <p className="text-muted">No orders ready to bill.</p>}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
           {billableOrders?.map((order) => {
             const totalItems = order.items.reduce((sum, item) => sum + item.quantity, 0);
-            const isFormOpen = invoiceFormOrderId === order.id;
-            const { subtotal, tax, total } = computeTotals(order, discountInput ? Number(discountInput) : 0);
+            const { subtotal: orderSubtotal } = computeTotals(order, 0);
 
             return (
-              <div key={order.id} className="card">
-                <h3>Table {order.table.number}</h3>
-                <p style={{ color: "var(--color-text-muted)" }}>{order.status}</p>
-                <p>
+              <div key={order.id} className="table-card">
+                <div>
+                  <div className="table-card-number">Table {order.table.number}</div>
+                  <span className="badge badge-blue">{order.status}</span>
+                </div>
+                <div className="table-card-detail">
                   {order.items.length} item type(s), {totalItems} total
-                </p>
-
-                {!isFormOpen && (
-                  <button type="button" onClick={() => openInvoiceForm(order.id)} style={{ marginTop: "0.75rem" }}>
-                    Create Invoice
-                  </button>
-                )}
-
-                {isFormOpen && (
-                  <form
-                    onSubmit={(e) => void handleCreateInvoice(e, order)}
-                    style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}
-                  >
-                    <div>
-                      <label htmlFor={`pm-${order.id}`}>Payment method</label>
-                      <select
-                        id={`pm-${order.id}`}
-                        value={paymentMethod}
-                        onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                        style={{ width: "100%" }}
-                      >
-                        <option value="CASH">Cash</option>
-                        <option value="CARD">Card</option>
-                        <option value="MOBILE">Mobile</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label htmlFor={`disc-${order.id}`}>Discount (optional)</label>
-                      <input
-                        id={`disc-${order.id}`}
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={discountInput}
-                        onChange={(e) => setDiscountInput(e.target.value)}
-                        style={{ width: "100%" }}
-                      />
-                    </div>
-                    <div style={{ fontSize: "0.875rem" }}>
-                      <div>Subtotal: ${money(subtotal)}</div>
-                      <div>Tax (13%): ${money(tax)}</div>
-                      <div>Discount: -${money(discountInput || 0)}</div>
-                      <strong>Total: ${money(total)}</strong>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <button type="submit" disabled={isCreating}>
-                        {isCreating ? "Creating..." : "Confirm & Generate Invoice"}
-                      </button>
-                      <button type="button" onClick={() => setInvoiceFormOrderId(null)}>
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                )}
+                </div>
+                <div style={{ fontSize: "0.9375rem", fontWeight: 600 }}>
+                  ${money(orderSubtotal)}{" "}
+                  <span className="text-muted text-sm" style={{ fontWeight: 400 }}>
+                    (subtotal)
+                  </span>
+                </div>
+                <button type="button" className="btn btn-primary w-full" style={{ justifyContent: "center" }} onClick={() => openInvoicePanel(order)}>
+                  Create Invoice
+                </button>
               </div>
             );
           })}
         </div>
-      </section>
 
-      <section>
-        <h2 style={{ marginBottom: "1rem" }}>Recent Invoices</h2>
+        <div className="card">
+          <div className="card-header">
+            <h2 className="card-title">Recent Invoices</h2>
+          </div>
+          <div className="card-body" style={{ padding: 0 }}>
+            {!invoices && <p style={{ padding: "1.25rem" }}>Loading...</p>}
+            {invoices && (
+              <div style={{ overflowX: "auto" }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Invoice #</th>
+                      <th>Table</th>
+                      <th>Total</th>
+                      <th>Status</th>
+                      <th>Payment</th>
+                      <th>Created</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.data.map((invoice) => (
+                      <tr key={invoice.id}>
+                        <td>{invoice.invoiceNumber}</td>
+                        <td>Table {invoice.order.table.number}</td>
+                        <td>${money(invoice.totalAmount)}</td>
+                        <td>
+                          <span className={`badge ${STATUS_BADGE_CLASS[invoice.status]}`}>{invoice.status.replace(/_/g, " ")}</span>
+                        </td>
+                        <td>{invoice.paymentMethod ?? "-"}</td>
+                        <td>{new Date(invoice.createdAt).toLocaleString()}</td>
+                        <td>
+                          <div className="flex gap-2">
+                            {invoice.status === "UNPAID" && (
+                              <button
+                                type="button"
+                                className="btn btn-success btn-sm"
+                                disabled={busyId === invoice.id}
+                                onClick={() => void handleConfirmPayment(invoice.id)}
+                              >
+                                {busyId === invoice.id ? "..." : "Confirm Payment"}
+                              </button>
+                            )}
+                            {invoice.status === "PAID" && (
+                              <button type="button" className="btn btn-secondary btn-sm" onClick={() => openRefundModal(invoice)}>
+                                Request Refund
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-        {!invoices && <p>Loading...</p>}
-        {invoices && (
-          <>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ textAlign: "left", borderBottom: "1px solid var(--color-border)" }}>
-                    <th style={{ padding: "0.5rem" }}>Invoice #</th>
-                    <th style={{ padding: "0.5rem" }}>Table</th>
-                    <th style={{ padding: "0.5rem" }}>Total</th>
-                    <th style={{ padding: "0.5rem" }}>Status</th>
-                    <th style={{ padding: "0.5rem" }}>Payment</th>
-                    <th style={{ padding: "0.5rem" }}>Created</th>
-                    <th style={{ padding: "0.5rem" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoices.data.map((invoice) => (
-                    <tr key={invoice.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
-                      <td style={{ padding: "0.5rem" }}>{invoice.invoiceNumber}</td>
-                      <td style={{ padding: "0.5rem" }}>Table {invoice.order.table.number}</td>
-                      <td style={{ padding: "0.5rem" }}>${money(invoice.totalAmount)}</td>
-                      <td style={{ padding: "0.5rem" }}>
-                        <span
+            {invoices && (
+              <div className="pagination" style={{ padding: "1rem 1.25rem" }}>
+                <span className="pagination-info">
+                  Page {invoices.page} of {invoices.totalPages || 1}
+                </span>
+                <div className="flex gap-2">
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={page >= invoices.totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {invoiceOrder && (
+        <div className="panel-overlay" onClick={closeInvoicePanel}>
+          <div className="panel" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-header">
+              <h3 className="panel-title">Create Invoice - Table {invoiceOrder.table.number}</h3>
+              <button type="button" className="btn btn-icon btn-secondary" onClick={closeInvoicePanel} aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateInvoice} style={{ display: "contents" }}>
+              <div className="panel-body">
+                <div className="form-group">
+                  <label className="form-label">Order Summary</label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+                    {invoiceOrder.items.map((item) => (
+                      <div key={item.id} className="flex justify-between text-sm">
+                        <span>
+                          {item.quantity}× {item.menuItem.name}
+                        </span>
+                        <span>${money(Number(item.unitPrice ?? 0) * item.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Payment Method</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.5rem" }}>
+                    {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => {
+                      const selected = paymentMethod === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setPaymentMethod(value)}
                           style={{
-                            display: "inline-block",
-                            padding: "0.125rem 0.5rem",
-                            borderRadius: "9999px",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "0.375rem",
+                            padding: "0.75rem 0.5rem",
+                            borderRadius: "var(--radius)",
+                            border: `1px solid ${selected ? "var(--brand)" : "var(--border)"}`,
+                            background: selected ? "var(--brand-light)" : "var(--surface)",
+                            color: selected ? "var(--brand)" : "var(--text-primary)",
+                            cursor: "pointer",
                             fontSize: "0.75rem",
                             fontWeight: 600,
-                            color: "white",
-                            backgroundColor: STATUS_COLOURS[invoice.status] ?? "var(--color-text-muted)",
                           }}
                         >
-                          {invoice.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: "0.5rem" }}>{invoice.paymentMethod ?? "-"}</td>
-                      <td style={{ padding: "0.5rem" }}>{new Date(invoice.createdAt).toLocaleString()}</td>
-                      <td style={{ padding: "0.5rem", display: "flex", gap: "0.5rem" }}>
-                        {invoice.status === "UNPAID" && (
-                          <button
-                            type="button"
-                            disabled={busyId === invoice.id}
-                            onClick={() => void handleConfirmPayment(invoice.id)}
-                          >
-                            Confirm Payment
-                          </button>
-                        )}
-                        {invoice.status === "PAID" && (
-                          <button type="button" onClick={() => openRefundModal(invoice)}>
-                            Request Refund
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                          <Icon size={18} />
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-            <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginTop: "1rem" }}>
-              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                Previous
-              </button>
-              <span>
-                Page {invoices.page} of {invoices.totalPages || 1}
-              </span>
-              <button type="button" disabled={page >= invoices.totalPages} onClick={() => setPage((p) => p + 1)}>
-                Next
-              </button>
-            </div>
-          </>
-        )}
-      </section>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="discount">
+                    Discount (optional)
+                  </label>
+                  <input
+                    id="discount"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={discountInput}
+                    onChange={(e) => setDiscountInput(e.target.value)}
+                    className="form-input"
+                  />
+                </div>
 
-      {refundModalInvoice && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0,0,0,0.4)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <form
-            onSubmit={handleRequestRefund}
-            className="card"
-            style={{ width: "100%", maxWidth: "24rem", display: "flex", flexDirection: "column", gap: "1rem" }}
-          >
-            <h3>Request Refund - {refundModalInvoice.invoiceNumber}</h3>
-            <div>
-              <label htmlFor="refund-amount">Refund amount (max ${money(refundModalInvoice.totalAmount)})</label>
-              <input
-                id="refund-amount"
-                type="number"
-                min={0.01}
-                max={Number(refundModalInvoice.totalAmount)}
-                step="0.01"
-                required
-                value={refundAmount}
-                onChange={(e) => setRefundAmount(e.target.value)}
-                style={{ width: "100%" }}
-              />
-            </div>
-            <div>
-              <label htmlFor="refund-reason">Reason</label>
-              <input
-                id="refund-reason"
-                type="text"
-                required
-                value={refundReason}
-                onChange={(e) => setRefundReason(e.target.value)}
-                style={{ width: "100%" }}
-              />
-            </div>
-            {actionError && <p className="error-msg">{actionError}</p>}
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button type="submit" disabled={isRefunding}>
-                {isRefunding ? "Submitting..." : "Submit Refund Request"}
-              </button>
-              <button type="button" onClick={() => setRefundModalInvoice(null)}>
-                Cancel
-              </button>
-            </div>
-          </form>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", fontSize: "0.8125rem", paddingTop: "0.5rem", borderTop: "1px solid var(--border)" }}>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Subtotal</span>
+                    <span>${money(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Tax (13%)</span>
+                    <span>${money(tax)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Discount</span>
+                    <span>-${money(discountInput || 0)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold" style={{ fontSize: "0.9375rem" }}>
+                    <span>Total</span>
+                    <span>${money(total)}</span>
+                  </div>
+                </div>
+
+                {actionError && (
+                  <div className="alert alert-danger">
+                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                    <span>{actionError}</span>
+                  </div>
+                )}
+              </div>
+              <div className="panel-footer">
+                <button type="button" className="btn btn-secondary" onClick={closeInvoicePanel}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={isCreating}>
+                  {isCreating ? "Generating..." : "Generate Invoice"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
-    </div>
+
+      {refundModalInvoice && (
+        <div className="panel-overlay" onClick={() => setRefundModalInvoice(null)}>
+          <div className="panel" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-header">
+              <h3 className="panel-title">Request Refund - {refundModalInvoice.invoiceNumber}</h3>
+              <button type="button" className="btn btn-icon btn-secondary" onClick={() => setRefundModalInvoice(null)} aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleRequestRefund} style={{ display: "contents" }}>
+              <div className="panel-body">
+                <div className="form-group">
+                  <label className="form-label" htmlFor="refund-amount">
+                    Refund amount (max ${money(refundModalInvoice.totalAmount)})
+                  </label>
+                  <input
+                    id="refund-amount"
+                    type="number"
+                    min={0.01}
+                    max={Number(refundModalInvoice.totalAmount)}
+                    step="0.01"
+                    required
+                    value={refundAmount}
+                    onChange={(e) => setRefundAmount(e.target.value)}
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="refund-reason">
+                    Reason
+                  </label>
+                  <input
+                    id="refund-reason"
+                    type="text"
+                    required
+                    value={refundReason}
+                    onChange={(e) => setRefundReason(e.target.value)}
+                    className="form-input"
+                  />
+                </div>
+                {actionError && (
+                  <div className="alert alert-danger">
+                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                    <span>{actionError}</span>
+                  </div>
+                )}
+              </div>
+              <div className="panel-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setRefundModalInvoice(null)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={isRefunding}>
+                  {isRefunding ? "Submitting..." : "Submit Refund Request"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
