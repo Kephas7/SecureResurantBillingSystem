@@ -298,90 +298,79 @@ export default function MenuPage(): JSX.Element {
               </button>
             )}
           </div>
-          <div className="card-body" style={{ padding: 0 }}>
-            {!items && <p style={{ padding: "1.25rem" }}>Loading items...</p>}
-            {items && (
-              <div style={{ overflowX: "auto" }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th aria-label="Image"></th>
-                      <th>Name</th>
-                      <th>Category</th>
-                      <th>Price</th>
-                      <th>Available</th>
-                      {canManage && <th>Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          {item.imageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={`${API_URL}${item.imageUrl}`}
-                              alt={item.name}
-                              style={{ width: "40px", height: "40px", objectFit: "cover", borderRadius: "var(--radius-sm)" }}
-                            />
-                          ) : (
-                            <div
-                              style={{
-                                width: "40px",
-                                height: "40px",
-                                borderRadius: "var(--radius-sm)",
-                                background: "var(--bg)",
-                                border: "1px solid var(--border)",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <UtensilsCrossed size={16} style={{ color: "var(--text-muted)" }} />
-                            </div>
-                          )}
-                        </td>
-                        <td>{item.name}</td>
-                        <td>
-                          <span className="badge badge-blue">{item.category?.name ?? "-"}</span>
-                        </td>
-                        <td>${item.price}</td>
-                        <td>
-                          {canManage ? (
+          <div className="card-body">
+            {!items && <p>Loading items...</p>}
+            {items && items.length === 0 && <p className="text-muted">No menu items yet.</p>}
+            {items && items.length > 0 && (
+              <div className="menu-item-grid">
+                {items.map((item) => (
+                  <div key={item.id} className="menu-item-card">
+                    <div className="menu-item-card-img">
+                      {item.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={`${API_URL}${item.imageUrl}`}
+                          alt={item.name}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      ) : (
+                        <UtensilsCrossed size={32} style={{ color: "var(--text-muted)" }} />
+                      )}
+                    </div>
+                    <div className="menu-item-card-body">
+                      <div className="menu-item-card-name">{item.name}</div>
+                      <div>
+                        <span className="badge badge-blue">{item.category?.name ?? "-"}</span>
+                      </div>
+                      {item.description && (
+                        <p
+                          className="text-muted"
+                          style={{
+                            fontSize: "0.75rem",
+                            margin: 0,
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {item.description}
+                        </p>
+                      )}
+                      <div className="menu-item-card-price">${item.price}</div>
+                      <div className="menu-item-card-footer">
+                        {canManage ? (
+                          <button
+                            type="button"
+                            className={`toggle${item.isAvailable ? " toggle-on" : ""}`}
+                            disabled={busyId === item.id}
+                            onClick={() => void handleToggleItem(item.id)}
+                            aria-label={item.isAvailable ? "Mark unavailable" : "Mark available"}
+                          />
+                        ) : (
+                          <span className={`badge ${item.isAvailable ? "badge-green" : "badge-gray"}`}>
+                            {item.isAvailable ? "Available" : "Unavailable"}
+                          </span>
+                        )}
+                        {canManage && (
+                          <div className="flex gap-2">
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => startEditItem(item)}>
+                              Edit
+                            </button>
                             <button
                               type="button"
-                              className={`toggle${item.isAvailable ? " toggle-on" : ""}`}
+                              className="btn btn-danger btn-sm"
                               disabled={busyId === item.id}
-                              onClick={() => void handleToggleItem(item.id)}
-                              aria-label={item.isAvailable ? "Mark unavailable" : "Mark available"}
-                            />
-                          ) : (
-                            <span className={`badge ${item.isAvailable ? "badge-green" : "badge-gray"}`}>
-                              {item.isAvailable ? "Yes" : "No"}
-                            </span>
-                          )}
-                        </td>
-                        {canManage && (
-                          <td>
-                            <div className="flex gap-2">
-                              <button type="button" className="btn btn-secondary btn-sm" onClick={() => startEditItem(item)}>
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-danger btn-sm"
-                                disabled={busyId === item.id}
-                                onClick={() => void handleDeleteItem(item.id)}
-                              >
-                                {busyId === item.id ? "..." : "Delete"}
-                              </button>
-                            </div>
-                          </td>
+                              onClick={() => void handleDeleteItem(item.id)}
+                            >
+                              {busyId === item.id ? "..." : "Delete"}
+                            </button>
+                          </div>
                         )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
