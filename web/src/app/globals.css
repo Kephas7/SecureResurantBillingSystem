@@ -879,3 +879,12 @@ body {
 .toggle.toggle-on::after {
   transform: translateX(0.875rem);
 }
+
+/* Spinning refresh icon */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
