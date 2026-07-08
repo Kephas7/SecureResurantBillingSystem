@@ -247,6 +247,12 @@ model Invoice {
   status     InvoiceStatus @default(UNPAID)
   paidAt     DateTime?
   paymentMethod String?
+  // Stripe PaymentIntent ID for tracking - lets the webhook handler
+  // (which only receives the PaymentIntent, never the invoiceId
+  // directly on the URL) match a "payment_intent.succeeded" event
+  // back to this invoice via the metadata stored on the PaymentIntent
+  // itself (see StripeService.createPaymentIntent).
+  stripePaymentIntentId String?
 
   // Once paidAt is set, application logic must block direct mutation.
   // Any change after payment goes through a RefundRequest instead.
