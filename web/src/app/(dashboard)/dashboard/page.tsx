@@ -2,16 +2,26 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Users, Grid3x3, DollarSign, RotateCcw } from "lucide-react";
+import { Users, Grid3x3, ClipboardList } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import { navItemsForRole } from "../../../lib/nav-items";
-import { usersApi, tablesApi, reportsApi, billingApi } from "../../../lib/api";
+import { usersApi, tablesApi, ordersApi } from "../../../lib/api";
 
 interface DashboardStats {
-  totalUsers: number | null;
-  activeTables: number | null;
-  todaysRevenue: string | null;
-  pendingRefunds: number | null;
+  totalStaff: number | null;
+  tablesOccupied: number | null;
+  totalTables: number | null;
+  todaysOrders: number | null;
+}
+
+function isToday(isoDate: string): boolean {
+  const date = new Date(isoDate);
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
 }
 
 // Role-based UI rendering is a UX convenience only. Access control is
@@ -24,38 +34,42 @@ interface DashboardStats {
 export default function DashboardPage(): JSX.Element {
   const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats>({
-    totalUsers: null,
-    activeTables: null,
-    todaysRevenue: null,
-    pendingRefunds: null,
+    totalStaff: null,
+    tablesOccupied: null,
+    totalTables: null,
+    todaysOrders: null,
   });
   const [statsLoading, setStatsLoading] = useState(true);
 
   const isAdmin = user?.role === "ADMIN";
-  const isManagerOrAdmin = user?.role === "ADMIN" || user?.role === "MANAGER";
+  // /tables is ADMIN/MANAGER/CASHIER/WAITER server-side - KITCHEN has no
+  // reason to view table occupancy and would 403 if this card tried to
+  // fetch it on their behalf.
+  const canViewTables = user?.role !== "KITCHEN";
 
   useEffect(() => {
-    if (!user || !isManagerOrAdmin) {
+    if (!user) {
       setStatsLoading(false);
       return;
     }
 
-    const today = new Date().toISOString().split("T")[0];
-
     Promise.all([
       // /users is ADMIN-only server-side - only ever requested as ADMIN,
-      // never on behalf of a MANAGER (that call would 403 regardless).
+      // never on behalf of any other role (that call would 403 regardless).
       isAdmin ? usersApi.getAll() : Promise.resolve(null),
-      tablesApi.getAll(),
-      reportsApi.getSales(today, today),
-      billingApi.getPendingRefunds(),
+      canViewTables ? tablesApi.getAll() : Promise.resolve(null),
+      // /orders is reachable by every role, but WAITER only ever sees
+      // their own orders (IDOR protection in OrdersService) - "today's
+      // orders" for a waiter reflects their own count, not the whole
+      // restaurant's, which is the correct scoping for that role anyway.
+      ordersApi.getAll(),
     ])
-      .then(([users, tables, sales, pendingRefunds]) => {
+      .then(([users, tables, orders]) => {
         setStats({
-          totalUsers: users ? users.length : null,
-          activeTables: tables.filter((t) => t.status === "OCCUPIED").length,
-          todaysRevenue: sales.totalRevenue,
-          pendingRefunds: pendingRefunds.length,
+          totalStaff: users ? users.filter((u) => u.isActive).length : null,
+          tablesOccupied: tables ? tables.filter((t) => t.status === "OCCUPIED").length : null,
+          totalTables: tables ? tables.length : null,
+          todaysOrders: orders.filter((o) => isToday(o.createdAt)).length,
         });
       })
       .catch(() => {
@@ -63,7 +77,7 @@ export default function DashboardPage(): JSX.Element {
         // any of these fail, the page still renders with what it has.
       })
       .finally(() => setStatsLoading(false));
-  }, [user, isAdmin, isManagerOrAdmin]);
+  }, [user, isAdmin, canViewTables]);
 
   if (!user) {
     return <p>Loading...</p>;
@@ -81,45 +95,77 @@ export default function DashboardPage(): JSX.Element {
       </div>
 
       <div className="page-content">
-        {isManagerOrAdmin && (
-          <div className="stat-grid" style={{ marginBottom: "2rem" }}>
-            {isAdmin && (
-              <div className="stat-card">
-                <div className="stat-label">
-                  <Users size={14} />
-                  Total Users
-                </div>
-                <div className="stat-value">{statsLoading ? "—" : stats.totalUsers}</div>
-              </div>
-            )}
-
+        <div className="stat-grid" style={{ marginBottom: "2rem" }}>
+          {isAdmin && (
             <div className="stat-card">
               <div className="stat-label">
-                <Grid3x3 size={14} />
-                Active Tables
+                <span
+                  style={{
+                    width: "1.5rem",
+                    height: "1.5rem",
+                    borderRadius: "50%",
+                    background: "var(--info-light)",
+                    color: "var(--info)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Users size={13} />
+                </span>
+                Total Staff
               </div>
-              <div className="stat-value">{statsLoading ? "—" : stats.activeTables}</div>
+              <div className="stat-value">{statsLoading ? "—" : stats.totalStaff}</div>
+              <div className="stat-sub">active staff</div>
             </div>
+          )}
 
+          {canViewTables && (
             <div className="stat-card">
               <div className="stat-label">
-                <DollarSign size={14} />
-                Today&apos;s Revenue
+                <span
+                  style={{
+                    width: "1.5rem",
+                    height: "1.5rem",
+                    borderRadius: "50%",
+                    background: "var(--brand-light)",
+                    color: "var(--brand)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Grid3x3 size={13} />
+                </span>
+                Tables Occupied
               </div>
-              <div className="stat-value">
-                {statsLoading ? "—" : `$${Number(stats.todaysRevenue ?? 0).toFixed(2)}`}
-              </div>
+              <div className="stat-value">{statsLoading ? "—" : stats.tablesOccupied}</div>
+              <div className="stat-sub">{statsLoading ? " " : `of ${stats.totalTables} total`}</div>
             </div>
+          )}
 
-            <div className="stat-card">
-              <div className="stat-label">
-                <RotateCcw size={14} />
-                Pending Refunds
-              </div>
-              <div className="stat-value">{statsLoading ? "—" : stats.pendingRefunds}</div>
+          <div className="stat-card">
+            <div className="stat-label">
+              <span
+                style={{
+                  width: "1.5rem",
+                  height: "1.5rem",
+                  borderRadius: "50%",
+                  background: "var(--success-light)",
+                  color: "var(--success)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <ClipboardList size={13} />
+              </span>
+              Today&apos;s Orders
             </div>
+            <div className="stat-value">{statsLoading ? "—" : stats.todaysOrders}</div>
+            <div className="stat-sub">placed today</div>
           </div>
-        )}
+        </div>
 
         <h2 style={{ fontSize: "0.9375rem", fontWeight: 600, marginBottom: "1rem" }}>Quick Actions</h2>
         <div className="module-grid">

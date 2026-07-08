@@ -43,6 +43,7 @@ export const NAV_ITEMS: Record<string, NavItem> = {
     href: "/admin/users",
     icon: Users,
     roles: ["ADMIN"],
+    description: "Staff accounts",
   },
   audit: {
     key: "audit",
@@ -50,6 +51,7 @@ export const NAV_ITEMS: Record<string, NavItem> = {
     href: "/admin/audit",
     icon: Shield,
     roles: ["ADMIN"],
+    description: "Security activity",
   },
   tables: {
     key: "tables",
@@ -57,7 +59,7 @@ export const NAV_ITEMS: Record<string, NavItem> = {
     href: "/tables",
     icon: Grid3x3,
     roles: ["ADMIN", "MANAGER", "WAITER"],
-    description: "Manage dining tables and occupancy",
+    description: "Manage dining tables",
   },
   menu: {
     key: "menu",
@@ -65,7 +67,7 @@ export const NAV_ITEMS: Record<string, NavItem> = {
     href: "/menu",
     icon: BookOpen,
     roles: ["ADMIN", "MANAGER"],
-    description: "Categories, items and availability",
+    description: "Items, categories & pricing",
   },
   orders: {
     key: "orders",
@@ -73,7 +75,7 @@ export const NAV_ITEMS: Record<string, NavItem> = {
     href: "/orders",
     icon: ClipboardList,
     roles: ["ADMIN", "MANAGER", "CASHIER", "WAITER"],
-    description: "View and manage customer orders",
+    description: "Customer orders & status",
   },
   billing: {
     key: "billing",
@@ -81,7 +83,7 @@ export const NAV_ITEMS: Record<string, NavItem> = {
     href: "/billing",
     icon: Receipt,
     roles: ["ADMIN", "CASHIER"],
-    description: "Invoices, payments and receipts",
+    description: "Invoices & payments",
   },
   inventory: {
     key: "inventory",
@@ -89,7 +91,7 @@ export const NAV_ITEMS: Record<string, NavItem> = {
     href: "/inventory",
     icon: Package,
     roles: ["ADMIN", "MANAGER"],
-    description: "Stock levels and suppliers",
+    description: "Stock levels & suppliers",
   },
   refunds: {
     key: "refunds",
@@ -104,7 +106,7 @@ export const NAV_ITEMS: Record<string, NavItem> = {
     href: "/reports",
     icon: BarChart3,
     roles: ["ADMIN", "MANAGER"],
-    description: "Sales, staff and refund analytics",
+    description: "Sales & analytics",
   },
   kitchen: {
     key: "kitchen",

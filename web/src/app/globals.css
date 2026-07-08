@@ -327,8 +327,8 @@ body {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: var(--radius);
-  background: var(--brand-light);
-  color: var(--brand);
+  background: var(--brand);
+  color: white;
   display: flex;
   align-items: center;
   justify-content: center;
