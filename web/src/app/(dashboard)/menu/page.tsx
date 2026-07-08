@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, AlertCircle, X } from "lucide-react";
+import { Plus, AlertCircle, X, UtensilsCrossed } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import { menuApi, type MenuCategory, type MenuItem } from "../../../lib/api";
 import { ImageUpload } from "../../../components/menu/ImageUpload";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 interface CategoryFormState {
   name: string;
@@ -303,6 +305,7 @@ export default function MenuPage(): JSX.Element {
                 <table className="data-table">
                   <thead>
                     <tr>
+                      <th aria-label="Image"></th>
                       <th>Name</th>
                       <th>Category</th>
                       <th>Price</th>
@@ -313,6 +316,31 @@ export default function MenuPage(): JSX.Element {
                   <tbody>
                     {items.map((item) => (
                       <tr key={item.id}>
+                        <td>
+                          {item.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={`${API_URL}${item.imageUrl}`}
+                              alt={item.name}
+                              style={{ width: "40px", height: "40px", objectFit: "cover", borderRadius: "var(--radius-sm)" }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: "40px",
+                                height: "40px",
+                                borderRadius: "var(--radius-sm)",
+                                background: "var(--bg)",
+                                border: "1px solid var(--border)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <UtensilsCrossed size={16} style={{ color: "var(--text-muted)" }} />
+                            </div>
+                          )}
+                        </td>
                         <td>{item.name}</td>
                         <td>
                           <span className="badge badge-blue">{item.category?.name ?? "-"}</span>
