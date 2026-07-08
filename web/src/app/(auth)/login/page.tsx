@@ -64,12 +64,11 @@ function LoginForm(): JSX.Element {
   return (
     <div className="login-card">
       <div className="login-logo">
-        <UtensilsCrossed size={22} />
+        <UtensilsCrossed size={28} />
         Restaurant Secure
       </div>
 
-      <h1 className="login-title">Sign in to your account</h1>
-      <p className="login-subtitle">Enter your credentials to continue</p>
+      <p className="login-subtitle">Sign in to your account</p>
 
       <Suspense fallback={null}>
         <ResetSuccessBanner />
@@ -169,7 +168,12 @@ function LoginForm(): JSX.Element {
           </div>
         )}
 
-        <button type="submit" className="btn btn-primary w-full" disabled={submitDisabled} style={{ justifyContent: "center" }}>
+        <button
+          type="submit"
+          className="btn btn-primary w-full"
+          disabled={submitDisabled}
+          style={{ justifyContent: "center", padding: "0.625rem 1rem" }}
+        >
           {isSubmitting ? "Signing in..." : "Sign in"}
         </button>
 
