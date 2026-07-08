@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Minus, AlertCircle, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Minus, AlertCircle, X, ChevronDown, ChevronRight, UtensilsCrossed } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import {
   ordersApi,
@@ -16,6 +16,8 @@ import {
   type MenuItem,
   type CreateOrderItemPayload,
 } from "../../../lib/api";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 const STATUS_OPTIONS: OrderStatus[] = [
   "OPEN",
@@ -461,9 +463,41 @@ export default function OrdersPage(): JSX.Element | null {
                           return (
                             <div key={item.id}>
                               <div className="flex items-center justify-between">
-                                <div>
-                                  <div style={{ fontSize: "0.8125rem", fontWeight: 500 }}>{item.name}</div>
-                                  <div className="text-muted text-sm">${item.price}</div>
+                                <div className="flex items-center gap-2">
+                                  {item.imageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                      src={`${API_URL}${item.imageUrl}`}
+                                      alt={item.name}
+                                      style={{
+                                        width: "60px",
+                                        height: "60px",
+                                        objectFit: "cover",
+                                        borderRadius: "var(--radius-sm)",
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                  ) : (
+                                    <div
+                                      style={{
+                                        width: "60px",
+                                        height: "60px",
+                                        borderRadius: "var(--radius-sm)",
+                                        background: "var(--bg)",
+                                        border: "1px solid var(--border)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      <UtensilsCrossed size={20} style={{ color: "var(--text-muted)" }} />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div style={{ fontSize: "0.8125rem", fontWeight: 500 }}>{item.name}</div>
+                                    <div className="text-muted text-sm">${item.price}</div>
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <button
