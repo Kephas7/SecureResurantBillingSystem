@@ -2,7 +2,6 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { join } from 'path';
 import { writeFile, unlink } from 'fs/promises';
-import { fromBuffer as fileTypeFromBuffer } from 'file-type';
 import { AuditLogService } from '../../common/services/audit-log.service';
 
 /**
@@ -18,23 +17,40 @@ import { AuditLogService } from '../../common/services/audit-log.service';
  *   Hard 2MB cap and single-file-per-request limit enforced at the
  *   multipart-parsing layer, before any application code runs.
  *
- * Layer 3 — Magic byte validation (this file):
- *   Reads the actual file content signature via the `file-type` package
- *   (installed for this purpose — see Step 1) and compares it against
- *   an allow-list of {mime, extension} pairs. This is the only
+ * Layer 3 — Magic byte validation (this file, detectImageType()):
+ *   Reads the actual file content signature and compares it against
+ *   the three allowed image formats' real signatures. This is the only
  *   server-controlled check that cannot be spoofed by the client — a
  *   file claiming to be a JPEG via its Content-Type header or `.jpg`
  *   extension must actually start with the real JPEG signature (FF D8 FF).
  *   (OWASP File Upload Cheat Sheet — "Validate File Content")
  *
- *   Deviation from a hand-rolled magic-byte table: `file-type` is used
- *   instead of manually comparing byte arrays. A hand-rolled check for
- *   WebP in particular is easy to get subtly wrong — WebP files start
- *   with a generic 4-byte RIFF container header (0x52 0x49 0x46 0x46),
- *   which WAV and AVI files *also* start with; a correct check must also
- *   confirm the "WEBP" fourCC at offset 8. `file-type` handles this
- *   (and every other supported format's real signature) correctly, so
- *   it is used here instead of re-implementing signature parsing.
+ *   Note on using a hand-rolled check instead of the `file-type` npm
+ *   package: `file-type` was evaluated first (and is still installed as
+ *   a transitive dependency of @nestjs/common), but rejected for this
+ *   code path for two independent reasons discovered during
+ *   implementation:
+ *     1. Versions of `file-type` that still ship CommonJS builds (v16.x)
+ *        predate its `fileTypeFromBuffer` API; the current major (v22)
+ *        is ESM-only and cannot be statically imported from this
+ *        project's CommonJS TypeScript build without changing
+ *        `moduleResolution` project-wide — too large a change to make
+ *        for one endpoint.
+ *     2. More importantly: even the CJS-compatible v16.5.4 falls inside
+ *        the version range flagged by two moderate-severity advisories
+ *        (GHSA-5v7r-6r5c-r473 — infinite loop in the ASF/video-container
+ *        parser; GHSA-j47w-4g3g-c36v — ZIP-bomb DoS in the ZIP parser).
+ *        `file-type` detects dozens of formats — video containers,
+ *        archives, executables — and that detection code runs on the
+ *        full buffer before any allow-list check of ours ever sees the
+ *        result, so those unrelated parsers remain a reachable attack
+ *        surface through this endpoint even though this app only ever
+ *        wants to recognise 3 image formats.
+ *   Given this endpoint only needs to distinguish 3 well-documented,
+ *   simple, fixed-offset binary signatures, a small correctly-written
+ *   check (see detectImageType() below) has no dependency surface at
+ *   all and cannot inherit vulnerabilities from parsers for formats
+ *   this application will never accept.
  *
  * Layer 4 — UUID filename, generated only after Layer 3 passes:
  *   The original filename is discarded entirely. A UUID is used as the
@@ -63,14 +79,48 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 const UPLOAD_DIR = join(process.cwd(), 'uploads');
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
 
-// Allowed image types. Keyed by the actual, magic-byte-detected MIME
-// type (from `file-type`), each mapped to the extension used for the
-// stored filename — never the client-supplied original extension.
-const ALLOWED_IMAGE_TYPES: ReadonlyArray<{ mime: string; ext: string }> = [
-  { mime: 'image/jpeg', ext: '.jpg' },
-  { mime: 'image/png', ext: '.png' },
-  { mime: 'image/webp', ext: '.webp' },
-];
+// Real file signatures for exactly the 3 formats this endpoint accepts.
+// Source: https://en.wikipedia.org/wiki/List_of_file_signatures
+//
+// WebP requires checking BOTH the 4-byte RIFF container header AND the
+// "WEBP" fourCC at offset 8 - RIFF alone is a generic container header
+// also used by WAV and AVI files, so checking only the first 4 bytes
+// would incorrectly accept those as valid WebP images.
+function detectImageType(buffer: Buffer): { mime: string; ext: string } | null {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { mime: 'image/jpeg', ext: '.jpg' };
+  }
+
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return { mime: 'image/png', ext: '.png' };
+  }
+
+  if (
+    buffer.length >= 12 &&
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 && // "RIFF"
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50 // "WEBP"
+  ) {
+    return { mime: 'image/webp', ext: '.webp' };
+  }
+
+  return null;
+}
 
 // Only ever matches a filename this service itself generated
 // (`randomUUID()` + one of the allowed extensions) — a whitelist, not a
@@ -94,10 +144,9 @@ export class UploadService {
     }
 
     // Layer 3: magic byte validation (see class-level comment).
-    const detected = await fileTypeFromBuffer(file.buffer);
-    const allowed = detected && ALLOWED_IMAGE_TYPES.find((t) => t.mime === detected.mime);
+    const detected = detectImageType(file.buffer);
 
-    if (!allowed) {
+    if (!detected) {
       // SECURITY: do not reveal what the actual detected type was (or
       // that detection failed vs. mismatched) — that distinction could
       // help an attacker iterate toward a bypass.
@@ -107,7 +156,7 @@ export class UploadService {
     }
 
     // Layer 4: UUID filename, generated only now that content is verified.
-    const storedFilename = `${randomUUID()}${allowed.ext}`;
+    const storedFilename = `${randomUUID()}${detected.ext}`;
     await writeFile(join(UPLOAD_DIR, storedFilename), file.buffer);
 
     const imageUrl = `/uploads/${storedFilename}`;
