@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Plus, Minus, AlertCircle, X, ChevronDown, ChevronRight } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import {
   ordersApi,
@@ -26,12 +27,21 @@ const STATUS_OPTIONS: OrderStatus[] = [
   "BILLED",
 ];
 
+const STATUS_BADGE_CLASS: Record<OrderStatus, string> = {
+  OPEN: "badge-blue",
+  SENT_TO_KITCHEN: "badge-amber",
+  PREPARING: "badge-amber",
+  READY: "badge-green",
+  SERVED: "badge-cyan",
+  BILLED: "badge-gray",
+  CANCELLED: "badge-red",
+};
+
 function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
 interface DraftLine {
-  menuItemId: string;
   quantity: number;
   notes: string;
 }
@@ -48,12 +58,12 @@ export default function OrdersPage(): JSX.Element | null {
   const [history, setHistory] = useState<OrderStatusHistoryEntry[] | null>(null);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "">("");
 
-  // Waiter's create-order form state
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  // Waiter's create-order panel state
+  const [showCreatePanel, setShowCreatePanel] = useState(false);
   const [availableTables, setAvailableTables] = useState<RestaurantTable[]>([]);
   const [availableItems, setAvailableItems] = useState<MenuItem[]>([]);
   const [selectedTableId, setSelectedTableId] = useState("");
-  const [draftLines, setDraftLines] = useState<DraftLine[]>([]);
+  const [draftLines, setDraftLines] = useState<Record<string, DraftLine>>({});
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
@@ -103,17 +113,34 @@ export default function OrdersPage(): JSX.Element | null {
     }
   }
 
-  function addDraftLine(): void {
-    if (availableItems.length === 0) return;
-    setDraftLines([...draftLines, { menuItemId: availableItems[0].id, quantity: 1, notes: "" }]);
+  function openCreatePanel(): void {
+    setSelectedTableId("");
+    setDraftLines({});
+    setActionError(null);
+    setShowCreatePanel(true);
   }
 
-  function updateDraftLine(index: number, patch: Partial<DraftLine>): void {
-    setDraftLines(draftLines.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  function closeCreatePanel(): void {
+    setShowCreatePanel(false);
   }
 
-  function removeDraftLine(index: number): void {
-    setDraftLines(draftLines.filter((_, i) => i !== index));
+  function setQuantity(menuItemId: string, quantity: number): void {
+    setDraftLines((prev) => {
+      const next = { ...prev };
+      if (quantity <= 0) {
+        delete next[menuItemId];
+      } else {
+        next[menuItemId] = { quantity, notes: prev[menuItemId]?.notes ?? "" };
+      }
+      return next;
+    });
+  }
+
+  function setNotes(menuItemId: string, notes: string): void {
+    setDraftLines((prev) => ({
+      ...prev,
+      [menuItemId]: { quantity: prev[menuItemId]?.quantity ?? 1, notes },
+    }));
   }
 
   async function handleCreateOrder(e: React.FormEvent): Promise<void> {
@@ -121,15 +148,13 @@ export default function OrdersPage(): JSX.Element | null {
     setIsCreating(true);
     setActionError(null);
     try {
-      const items: CreateOrderItemPayload[] = draftLines.map((line) => ({
-        menuItemId: line.menuItemId,
+      const items: CreateOrderItemPayload[] = Object.entries(draftLines).map(([menuItemId, line]) => ({
+        menuItemId,
         quantity: line.quantity,
         notes: line.notes || undefined,
       }));
       await ordersApi.create({ tableId: selectedTableId, items });
-      setShowCreateForm(false);
-      setSelectedTableId("");
-      setDraftLines([]);
+      closeCreatePanel();
       await loadOrders();
       tablesApi.getAvailable().then(setAvailableTables).catch(() => undefined);
     } catch (err) {
@@ -174,233 +199,340 @@ export default function OrdersPage(): JSX.Element | null {
   }
 
   const visibleOrders = (orders ?? []).filter((order) => !statusFilter || order.status === statusFilter);
+  const isManagerOrAdmin = user.role === "MANAGER" || user.role === "ADMIN";
+
+  // Group available items by category name for the create-order panel.
+  const itemsByCategory = availableItems.reduce<Record<string, MenuItem[]>>((acc, item) => {
+    const key = item.category?.name ?? "Other";
+    (acc[key] ??= []).push(item);
+    return acc;
+  }, {});
+
+  const runningTotal = Object.entries(draftLines).reduce((sum, [menuItemId, line]) => {
+    const item = availableItems.find((i) => i.id === menuItemId);
+    return sum + (item ? Number(item.price) * line.quantity : 0);
+  }, 0);
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <h1>{user.role === "WAITER" ? "My Orders" : "Orders"}</h1>
-        {user.role === "WAITER" && (
-          <button type="button" onClick={() => setShowCreateForm((v) => !v)}>
-            {showCreateForm ? "Cancel" : "Create Order"}
-          </button>
-        )}
-      </div>
-
-      {(user.role === "MANAGER" || user.role === "ADMIN") && (
-        <div style={{ marginBottom: "1rem" }}>
-          <label htmlFor="status-filter">Filter by status</label>
-          <br />
-          <select
-            id="status-filter"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as OrderStatus | "")}
-          >
-            <option value="">All statuses</option>
-            {STATUS_OPTIONS.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
+    <>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">{user.role === "WAITER" ? "My Orders" : "Orders"}</h1>
+          <p className="page-subtitle">View and manage customer orders.</p>
         </div>
-      )}
-
-      {showCreateForm && user.role === "WAITER" && (
-        <form
-          onSubmit={handleCreateOrder}
-          className="card"
-          style={{ marginBottom: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "32rem" }}
-        >
-          <div>
-            <label htmlFor="order-table">Table</label>
+        <div className="flex items-center gap-3">
+          {isManagerOrAdmin && (
             <select
-              id="order-table"
-              required
-              value={selectedTableId}
-              onChange={(e) => setSelectedTableId(e.target.value)}
-              style={{ width: "100%" }}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as OrderStatus | "")}
+              className="form-select"
+              style={{ maxWidth: "180px" }}
             >
-              <option value="">Select a table</option>
-              {availableTables.map((table) => (
-                <option key={table.id} value={table.id}>
-                  Table {table.number} (seats {table.capacity})
+              <option value="">All statuses</option>
+              {STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>
+                  {status.replace(/_/g, " ")}
                 </option>
               ))}
             </select>
+          )}
+          {user.role === "WAITER" && (
+            <button type="button" className="btn btn-primary" onClick={openCreatePanel}>
+              <Plus size={16} />
+              Create Order
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="page-content">
+        {actionError && !showCreatePanel && (
+          <div className="alert alert-danger">
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+            <span>{actionError}</span>
           </div>
-
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <label>Items</label>
-              <button type="button" onClick={addDraftLine}>
-                Add Item
-              </button>
-            </div>
-
-            {draftLines.map((line, index) => (
-              <div key={index} style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
-                <select
-                  value={line.menuItemId}
-                  onChange={(e) => updateDraftLine(index, { menuItemId: e.target.value })}
-                  style={{ flex: 2 }}
-                >
-                  {availableItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.category?.name ? `[${item.category.name}] ` : ""}
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={line.quantity}
-                  onChange={(e) => updateDraftLine(index, { quantity: Number(e.target.value) })}
-                  style={{ width: "4rem" }}
-                />
-                <input
-                  type="text"
-                  placeholder="Notes (optional)"
-                  value={line.notes}
-                  onChange={(e) => updateDraftLine(index, { notes: e.target.value })}
-                  style={{ flex: 2 }}
-                />
-                <button type="button" onClick={() => removeDraftLine(index)}>
-                  Remove
-                </button>
-              </div>
-            ))}
-
-            {draftLines.length === 0 && (
-              <p style={{ color: "var(--color-text-muted)", marginTop: "0.5rem" }}>No items added yet.</p>
-            )}
+        )}
+        {loadError && (
+          <div className="alert alert-danger">
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+            <span>{loadError}</span>
           </div>
+        )}
 
-          {actionError && <p className="error-msg">{actionError}</p>}
-
-          <button type="submit" disabled={isCreating || draftLines.length === 0 || !selectedTableId}>
-            {isCreating ? "Creating..." : "Submit Order"}
-          </button>
-        </form>
-      )}
-
-      {!showCreateForm && actionError && <p className="error-msg" style={{ marginBottom: "1rem" }}>{actionError}</p>}
-      {loadError && <p className="error-msg">{loadError}</p>}
-      {!loadError && !orders && <p>Loading orders...</p>}
-
-      {orders && (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid var(--color-border)" }}>
-                <th style={{ padding: "0.5rem" }}>Order</th>
-                <th style={{ padding: "0.5rem" }}>Table</th>
-                {(user.role === "MANAGER" || user.role === "ADMIN") && <th style={{ padding: "0.5rem" }}>Waiter</th>}
-                <th style={{ padding: "0.5rem" }}>Status</th>
-                <th style={{ padding: "0.5rem" }}>Items</th>
-                <th style={{ padding: "0.5rem" }}>Created</th>
-                <th style={{ padding: "0.5rem" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleOrders.map((order) => {
-                const isExpanded = expandedId === order.id;
-                const isBusy = busyId === order.id;
-                const isOwnOrder = order.createdBy.id === user.id;
-
-                return (
-                  <Fragment key={order.id}>
-                    <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-                      <td style={{ padding: "0.5rem" }}>
-                        <button type="button" onClick={() => void toggleExpand(order)} style={{ background: "none", color: "inherit", padding: 0 }}>
-                          {isExpanded ? "▾" : "▸"} #{shortId(order.id)}
-                        </button>
-                      </td>
-                      <td style={{ padding: "0.5rem" }}>Table {order.table.number}</td>
-                      {(user.role === "MANAGER" || user.role === "ADMIN") && (
-                        <td style={{ padding: "0.5rem" }}>{order.createdBy.fullName}</td>
-                      )}
-                      <td style={{ padding: "0.5rem" }}>{order.status}</td>
-                      <td style={{ padding: "0.5rem" }}>{order.items.length}</td>
-                      <td style={{ padding: "0.5rem" }}>{new Date(order.createdAt).toLocaleString()}</td>
-                      <td style={{ padding: "0.5rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                        {user.role === "WAITER" && isOwnOrder && order.status === "OPEN" && (
-                          <>
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() => void handleStatusChange(order.id, "SENT_TO_KITCHEN")}
-                            >
-                              Send to Kitchen
-                            </button>
-                            <button type="button" disabled={isBusy} onClick={() => void handleCancel(order.id)}>
-                              Cancel
-                            </button>
-                          </>
-                        )}
-                        {user.role === "WAITER" && isOwnOrder && order.status === "READY" && (
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => void handleStatusChange(order.id, "SERVED")}
-                          >
-                            Mark Served
-                          </button>
-                        )}
-                        {user.role === "MANAGER" && order.status === "OPEN" && (
-                          <button type="button" disabled={isBusy} onClick={() => void handleCancel(order.id)}>
-                            Cancel
-                          </button>
-                        )}
-                        {user.role === "CASHIER" && (order.status === "READY" || order.status === "SERVED") && (
-                          <Link href="/billing">Create Invoice</Link>
-                        )}
-                      </td>
+        <div className="card">
+          <div className="card-body" style={{ padding: 0 }}>
+            {!loadError && !orders && <p style={{ padding: "1.25rem" }}>Loading orders...</p>}
+            {orders && (
+              <div style={{ overflowX: "auto" }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Table</th>
+                      {isManagerOrAdmin && <th>Waiter</th>}
+                      <th>Status</th>
+                      <th>Items</th>
+                      <th>Created</th>
+                      <th>Actions</th>
                     </tr>
-                    {isExpanded && (
-                      <tr>
-                        <td colSpan={7} style={{ padding: "0.75rem", backgroundColor: "var(--color-bg)" }}>
-                          <strong>Items</strong>
-                          <ul style={{ marginTop: "0.25rem", marginBottom: "0.75rem", paddingLeft: "1.25rem" }}>
-                            {order.items.map((item) => (
-                              <li key={item.id}>
-                                {item.quantity}x {item.menuItem.name}
-                                {item.unitPrice ? ` - $${item.unitPrice}` : ""}
-                                {item.notes ? ` (${item.notes})` : ""}
-                              </li>
-                            ))}
-                          </ul>
-                          <strong>Status history</strong>
-                          {history === null && <p>Loading...</p>}
-                          {history && history.length === 0 && <p>No history yet.</p>}
-                          {history && history.length > 0 && (
-                            <ul style={{ marginTop: "0.25rem", paddingLeft: "1.25rem" }}>
-                              {history.map((entry) => (
-                                <li key={entry.id}>
-                                  {entry.fromStatus} → {entry.toStatus} at{" "}
-                                  {new Date(entry.changedAt).toLocaleString()}
-                                </li>
-                              ))}
-                            </ul>
+                  </thead>
+                  <tbody>
+                    {visibleOrders.map((order) => {
+                      const isExpanded = expandedId === order.id;
+                      const isBusy = busyId === order.id;
+                      const isOwnOrder = order.createdBy.id === user.id;
+
+                      return (
+                        <Fragment key={order.id}>
+                          <tr>
+                            <td>
+                              <button
+                                type="button"
+                                onClick={() => void toggleExpand(order)}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  padding: 0,
+                                  cursor: "pointer",
+                                  color: "inherit",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "0.25rem",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                #{shortId(order.id)}
+                              </button>
+                            </td>
+                            <td>Table {order.table.number}</td>
+                            {isManagerOrAdmin && <td>{order.createdBy.fullName}</td>}
+                            <td>
+                              <span className={`badge ${STATUS_BADGE_CLASS[order.status]}`}>{order.status.replace(/_/g, " ")}</span>
+                            </td>
+                            <td>{order.items.length}</td>
+                            <td>{new Date(order.createdAt).toLocaleString()}</td>
+                            <td>
+                              <div className="flex gap-2" style={{ flexWrap: "wrap" }}>
+                                {user.role === "WAITER" && isOwnOrder && order.status === "OPEN" && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary btn-sm"
+                                      disabled={isBusy}
+                                      onClick={() => void handleStatusChange(order.id, "SENT_TO_KITCHEN")}
+                                    >
+                                      Send to Kitchen
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-danger btn-sm"
+                                      disabled={isBusy}
+                                      onClick={() => void handleCancel(order.id)}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </>
+                                )}
+                                {user.role === "WAITER" && isOwnOrder && order.status === "READY" && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-success btn-sm"
+                                    disabled={isBusy}
+                                    onClick={() => void handleStatusChange(order.id, "SERVED")}
+                                  >
+                                    Mark Served
+                                  </button>
+                                )}
+                                {user.role === "MANAGER" && order.status === "OPEN" && (
+                                  <button type="button" className="btn btn-danger btn-sm" disabled={isBusy} onClick={() => void handleCancel(order.id)}>
+                                    Cancel
+                                  </button>
+                                )}
+                                {user.role === "CASHIER" && (order.status === "READY" || order.status === "SERVED") && (
+                                  <Link href="/billing" className="btn btn-secondary btn-sm">
+                                    Create Invoice
+                                  </Link>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td colSpan={isManagerOrAdmin ? 7 : 6} style={{ background: "var(--bg)" }}>
+                                <div style={{ padding: "0.5rem 0" }}>
+                                  <strong style={{ fontSize: "0.8125rem" }}>Items</strong>
+                                  <ul style={{ marginTop: "0.375rem", marginBottom: "0.875rem", paddingLeft: "1.25rem" }}>
+                                    {order.items.map((item) => (
+                                      <li key={item.id} style={{ fontSize: "0.8125rem" }}>
+                                        {item.quantity}× {item.menuItem.name}
+                                        {item.unitPrice ? ` - $${item.unitPrice}` : ""}
+                                        {item.notes ? <span className="text-muted"> ({item.notes})</span> : ""}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                  <strong style={{ fontSize: "0.8125rem" }}>Status history</strong>
+                                  {history === null && <p className="text-muted text-sm">Loading...</p>}
+                                  {history && history.length === 0 && <p className="text-muted text-sm">No history yet.</p>}
+                                  {history && history.length > 0 && (
+                                    <ul style={{ marginTop: "0.375rem", paddingLeft: "1.25rem" }}>
+                                      {history.map((entry) => (
+                                        <li key={entry.id} style={{ fontSize: "0.8125rem" }}>
+                                          {entry.fromStatus.replace(/_/g, " ")} → {entry.toStatus.replace(/_/g, " ")} at{" "}
+                                          {new Date(entry.changedAt).toLocaleString()}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
                           )}
+                        </Fragment>
+                      );
+                    })}
+                    {visibleOrders.length === 0 && (
+                      <tr>
+                        <td colSpan={isManagerOrAdmin ? 7 : 6}>
+                          <div className="empty-state">No orders to show.</div>
                         </td>
                       </tr>
                     )}
-                  </Fragment>
-                );
-              })}
-              {visibleOrders.length === 0 && (
-                <tr>
-                  <td colSpan={7} style={{ padding: "0.5rem", color: "var(--color-text-muted)" }}>
-                    No orders to show.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {showCreatePanel && (
+        <div className="panel-overlay" onClick={closeCreatePanel}>
+          <div className="panel" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-header">
+              <h3 className="panel-title">Create Order</h3>
+              <button type="button" className="btn btn-icon btn-secondary" onClick={closeCreatePanel} aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateOrder} style={{ display: "contents" }}>
+              <div className="panel-body">
+                <div className="form-group">
+                  <label className="form-label">Table</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.5rem" }}>
+                    {availableTables.map((table) => {
+                      const selected = selectedTableId === table.id;
+                      return (
+                        <button
+                          key={table.id}
+                          type="button"
+                          onClick={() => setSelectedTableId(table.id)}
+                          style={{
+                            padding: "0.625rem 0.5rem",
+                            borderRadius: "var(--radius)",
+                            border: `1px solid ${selected ? "var(--brand)" : "var(--border)"}`,
+                            background: selected ? "var(--brand-light)" : "var(--surface)",
+                            color: selected ? "var(--brand)" : "var(--text-primary)",
+                            cursor: "pointer",
+                            textAlign: "center",
+                            fontSize: "0.8125rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Table {table.number}
+                        </button>
+                      );
+                    })}
+                    {availableTables.length === 0 && <p className="text-muted text-sm">No available tables.</p>}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Items</label>
+                  {Object.entries(itemsByCategory).map(([categoryName, categoryItems]) => (
+                    <div key={categoryName} style={{ marginBottom: "1rem" }}>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-muted)", marginBottom: "0.375rem" }}>
+                        {categoryName}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+                        {categoryItems.map((item) => {
+                          const line = draftLines[item.id];
+                          const quantity = line?.quantity ?? 0;
+                          return (
+                            <div key={item.id}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div style={{ fontSize: "0.8125rem", fontWeight: 500 }}>{item.name}</div>
+                                  <div className="text-muted text-sm">${item.price}</div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-icon btn-sm"
+                                    onClick={() => setQuantity(item.id, Math.max(0, quantity - 1))}
+                                    disabled={quantity === 0}
+                                    aria-label={`Decrease ${item.name}`}
+                                  >
+                                    <Minus size={12} />
+                                  </button>
+                                  <span style={{ minWidth: "1.25rem", textAlign: "center", fontSize: "0.8125rem" }}>{quantity}</span>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-icon btn-sm"
+                                    onClick={() => setQuantity(item.id, quantity + 1)}
+                                    aria-label={`Increase ${item.name}`}
+                                  >
+                                    <Plus size={12} />
+                                  </button>
+                                </div>
+                              </div>
+                              {quantity > 0 && (
+                                <input
+                                  type="text"
+                                  placeholder="Notes (optional)"
+                                  value={line?.notes ?? ""}
+                                  onChange={(e) => setNotes(item.id, e.target.value)}
+                                  className="form-input"
+                                  style={{ marginTop: "0.375rem" }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {actionError && (
+                  <div className="alert alert-danger">
+                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                    <span>{actionError}</span>
+                  </div>
+                )}
+              </div>
+              <div className="panel-footer" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.75rem" }}>
+                <div className="flex justify-between font-semibold" style={{ fontSize: "0.9375rem" }}>
+                  <span>Total</span>
+                  <span>${runningTotal.toFixed(2)}</span>
+                </div>
+                <div className="flex gap-3" style={{ justifyContent: "flex-end" }}>
+                  <button type="button" className="btn btn-secondary" onClick={closeCreatePanel}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={isCreating || Object.keys(draftLines).length === 0 || !selectedTableId}
+                  >
+                    {isCreating ? "Creating..." : "Submit Order"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
