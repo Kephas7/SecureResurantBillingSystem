@@ -25,6 +25,18 @@ class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   WEB_ORIGIN!: string;
+
+  // Stripe keys validated at startup — the application will not start
+  // without them. This prevents the silent failure mode where a missing
+  // key causes payment processing to fail at runtime, potentially after
+  // a customer has been charged.
+  @IsString()
+  @IsNotEmpty()
+  STRIPE_SECRET_KEY!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  STRIPE_WEBHOOK_SECRET!: string;
 }
 
 // Environment variable validation runs at startup and crashes the
