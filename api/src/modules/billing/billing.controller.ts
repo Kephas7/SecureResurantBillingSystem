@@ -1,6 +1,21 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  RawBodyRequest,
+  Req,
+} from '@nestjs/common';
+import { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/guards/session.guard';
 import { BillingService } from './billing.service';
 import { CreateInvoiceDto, PaginationQueryDto, RequestRefundDto } from './billing.dto';
 
@@ -43,6 +58,46 @@ export class BillingController {
   @Post('invoices/:id/confirm')
   async confirmPayment(@Param('id') id: string, @CurrentUser() cashierId: string) {
     return this.billingService.confirmPayment(id, cashierId);
+  }
+
+  // SECURITY (cite in report): only a Cashier may initiate a Stripe
+  // payment for an invoice - matches the existing confirmPayment
+  // endpoint's role restriction above, kept consistent rather than
+  // widened to Manager/Admin as well.
+  @Roles('CASHIER')
+  @HttpCode(HttpStatus.CREATED)
+  @Post('invoices/:id/create-payment-intent')
+  async createPaymentIntent(@Param('id') id: string, @CurrentUser() cashierId: string) {
+    return this.billingService.createPaymentIntent(id, cashierId);
+  }
+
+  // SECURITY (cite in report): this endpoint is @Public() - it is called
+  // by Stripe's servers, not a logged-in user, so it cannot go through
+  // the session-based SessionGuard. Its security comes entirely from
+  // BillingService.handleStripeWebhook -> StripeService.constructWebhookEvent
+  // verifying the 'stripe-signature' header against the raw request
+  // body using our webhook signing secret (OWASP A08: Software and Data
+  // Integrity Failures). req.rawBody is populated by main.ts's
+  // rawBody:true app option - signature verification requires the exact
+  // unparsed byte stream, not the JSON-parsed body.
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('webhooks/stripe')
+  async handleStripeWebhook(@Req() req: RawBodyRequest<Request>, @Headers('stripe-signature') signature: string) {
+    if (!req.rawBody || !signature) {
+      throw new BadRequestException('Missing raw body or Stripe-Signature header');
+    }
+
+    try {
+      await this.billingService.handleStripeWebhook(req.rawBody, signature);
+    } catch {
+      // Signature verification failed - return 400, not 500, so this is
+      // clearly distinguishable from an internal server error and so
+      // Stripe's dashboard reports it as a client-side (our) rejection.
+      throw new BadRequestException('Webhook signature verification failed');
+    }
+
+    return { received: true };
   }
 
   @Roles('CASHIER', 'MANAGER')

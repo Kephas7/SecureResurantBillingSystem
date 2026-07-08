@@ -1,9 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InvoiceStatus, OrderStatus, Prisma, TableStatus } from '@prisma/client';
+import Stripe from 'stripe';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { generateInvoiceNumber } from '../../common/utils/invoice-number.util';
 import { InventoryService } from '../inventory/inventory.service';
+import { StripeService } from './stripe.service';
 import { CreateInvoiceDto } from './billing.dto';
 
 const BILLABLE_ORDER_STATUSES: OrderStatus[] = [OrderStatus.READY, OrderStatus.SERVED];
@@ -29,6 +31,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly inventoryService: InventoryService,
+    private readonly stripeService: StripeService,
   ) {}
 
   async createInvoice(dto: CreateInvoiceDto, cashierId: string): Promise<InvoiceWithRelations> {
@@ -181,6 +184,139 @@ export class BillingService {
     });
 
     return updated;
+  }
+
+  // SECURITY (cite in report): re-checks status server-side rather than
+  // trusting the frontend to only call this for an UNPAID invoice - a
+  // cashier retrying a stuck request must never be able to generate a
+  // second, independent PaymentIntent for the same invoice. The
+  // idempotency key in StripeService.createPaymentIntent (keyed on
+  // invoiceId) additionally guarantees Stripe itself returns the same
+  // PaymentIntent on a retry rather than creating a duplicate.
+  async createPaymentIntent(invoiceId: string, cashierId: string): Promise<{ clientSecret: string }> {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    if (invoice.status !== InvoiceStatus.UNPAID) {
+      throw new ConflictException('Invoice has already been paid');
+    }
+
+    const amountInCents = this.stripeService.toStripeCents(invoice.totalAmount.toString());
+    const { clientSecret, paymentIntentId } = await this.stripeService.createPaymentIntent(invoiceId, amountInCents);
+
+    await this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { stripePaymentIntentId: paymentIntentId },
+    });
+
+    // clientSecret is returned to the caller only - it is never logged
+    // or written to the audit trail, even though it is scoped to a
+    // single PaymentIntent and cannot itself be used to create charges.
+    await this.auditLog.write(cashierId, 'PAYMENT_INTENT_CREATED', 'Invoice', invoiceId, {
+      paymentIntentId,
+      amount: invoice.totalAmount.toString(),
+    });
+
+    return { clientSecret };
+  }
+
+  // SECURITY (cite in report): this is the only code path that marks an
+  // invoice PAID as a result of a Stripe payment. It is only ever
+  // reached via the webhook controller endpoint, after
+  // StripeService.constructWebhookEvent has verified the event's
+  // HMAC-SHA256 signature - never from a client-supplied request body.
+  // (OWASP A08: Software and Data Integrity Failures)
+  async handleStripeWebhook(payload: Buffer, signature: string): Promise<void> {
+    const event = this.stripeService.constructWebhookEvent(payload, signature);
+
+    switch (event.type) {
+      case 'payment_intent.succeeded':
+        await this.handlePaymentSucceeded(event.data.object as Stripe.PaymentIntent);
+        break;
+      case 'payment_intent.payment_failed':
+        await this.handlePaymentFailed(event.data.object as Stripe.PaymentIntent);
+        break;
+      default:
+        this.logger.log(`Unhandled Stripe event type: ${event.type}`);
+    }
+  }
+
+  // SECURITY (cite in report): idempotent by design. Stripe only
+  // guarantees "at-least-once" webhook delivery - the same
+  // payment_intent.succeeded event can be delivered more than once
+  // (e.g. Stripe retrying after a slow 2xx response from us). Checking
+  // status !== UNPAID before running the settlement transaction turns a
+  // duplicate delivery into a no-op instead of double-decrementing
+  // inventory or re-writing paidAt.
+  private async handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { stripePaymentIntentId: paymentIntent.id },
+      include: { order: true },
+    });
+
+    if (!invoice) {
+      this.logger.warn(`Received payment_intent.succeeded for unknown PaymentIntent ${paymentIntent.id}`);
+      return;
+    }
+
+    if (invoice.status !== InvoiceStatus.UNPAID) {
+      this.logger.log(`Ignoring duplicate payment_intent.succeeded for already-settled invoice ${invoice.id}`);
+      return;
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({ where: { id: invoice.orderId }, data: { status: OrderStatus.BILLED } });
+
+      // Table is now free - payment is the point at which the table
+      // actually becomes available for the next guest (see confirmPayment).
+      await tx.restaurantTable.update({ where: { id: invoice.order.tableId }, data: { status: TableStatus.AVAILABLE } });
+
+      return tx.invoice.update({
+        where: { id: invoice.id },
+        data: { status: InvoiceStatus.PAID, paidAt: new Date(), paymentMethod: 'STRIPE' },
+        include: INVOICE_INCLUDE,
+      });
+    });
+
+    // Inventory decrement failures must never block or roll back an
+    // already-confirmed payment - see confirmPayment for the same
+    // "log a warning, don't block" contract.
+    try {
+      await this.inventoryService.decrementForOrder(invoice.orderId);
+    } catch (err: unknown) {
+      this.logger.error(
+        `Inventory decrement failed for order ${invoice.orderId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // actorId is null - this is a system event delivered by Stripe's
+    // webhook, not an action taken by an authenticated user.
+    await this.auditLog.write(null, 'PAYMENT_CONFIRMED', 'Invoice', invoice.id, {
+      totalAmount: updated.totalAmount.toString(),
+      paymentMethod: 'STRIPE',
+      stripePaymentIntentId: paymentIntent.id,
+    });
+  }
+
+  private async handlePaymentFailed(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { stripePaymentIntentId: paymentIntent.id },
+    });
+
+    if (!invoice) {
+      this.logger.warn(`Received payment_intent.payment_failed for unknown PaymentIntent ${paymentIntent.id}`);
+      return;
+    }
+
+    // Invoice stays UNPAID so the cashier can retry payment - a
+    // declined card attempt must never itself be treated as a
+    // financial event or change invoice state.
+    await this.auditLog.write(null, 'PAYMENT_FAILED', 'Invoice', invoice.id, {
+      stripePaymentIntentId: paymentIntent.id,
+      lastPaymentError: paymentIntent.last_payment_error?.message,
+    });
   }
 
   async requestRefund(invoiceId: string, requestedById: string, reason: string, amount: number) {

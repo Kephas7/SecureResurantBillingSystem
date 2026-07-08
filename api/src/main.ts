@@ -6,7 +6,7 @@ import helmet from "helmet";
 import session from "express-session";
 import RedisStore from "connect-redis";
 import Redis from "ioredis";
-import { json, urlencoded, Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction } from "express";
 import { join } from "path";
 import { AppModule } from "./app.module";
 
@@ -16,13 +16,27 @@ import { AppModule } from "./app.module";
 // protocol downgrade attacks (HSTS). Implemented per the OWASP Secure
 // Headers Project recommendations.
 async function bootstrap() {
-  // bodyParser is disabled here so the size-limited json()/urlencoded()
-  // middleware below are the ONLY body parsers registered - Nest's
-  // default bodyParser (enabled unless turned off) would otherwise
-  // consume the request stream first, silently making any body-parser
-  // middleware added afterwards a no-op with no size limit actually
-  // enforced.
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  // bodyParser is disabled here so the size-limited parsers registered
+  // via app.useBodyParser() below are the ONLY body parsers registered -
+  // Nest's default bodyParser (enabled unless turned off) would
+  // otherwise consume the request stream first, silently making any
+  // body-parser middleware added afterwards a no-op with no size limit
+  // actually enforced.
+  //
+  // rawBody: true additionally makes Nest capture the exact,
+  // unmodified request body bytes into req.rawBody alongside the normal
+  // parsed req.body. This is required for the Stripe webhook endpoint
+  // (POST /billing/webhooks/stripe) - constructWebhookEvent() must
+  // verify Stripe's HMAC signature against the raw byte stream Stripe
+  // itself signed, not a JSON.stringify() of the parsed body, which is
+  // not guaranteed to byte-for-byte match what was received (key
+  // ordering, whitespace, number formatting can all differ). Omitting
+  // rawBody is one of the most common Stripe integration mistakes and
+  // silently breaks webhook signature verification for every event.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+    rawBody: true,
+  });
 
   app.use(
     helmet({
@@ -117,8 +131,16 @@ async function bootstrap() {
   // is generous for every legitimate payload in this system (the
   // largest is an order with several line items) (OWASP A05: Security
   // Misconfiguration).
-  app.use(json({ limit: "100kb" }));
-  app.use(urlencoded({ extended: true, limit: "100kb" }));
+  //
+  // Registered via app.useBodyParser() rather than plain app.use(json())
+  // - with bodyParser:false above, Nest's automatic parser-middleware
+  // wiring (which is what makes the rawBody:true option above actually
+  // populate req.rawBody) is skipped entirely. useBodyParser() is the
+  // NestExpressApplication-specific method that re-registers a parser
+  // while still respecting the top-level rawBody flag, so both the
+  // explicit size limit AND req.rawBody capture apply together.
+  app.useBodyParser("json", { limit: "100kb" });
+  app.useBodyParser("urlencoded", { extended: true, limit: "100kb" });
 
   // --- Global input validation ---
   // whitelist: strips any property not declared on the DTO.
