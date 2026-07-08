@@ -1,6 +1,7 @@
 import { Controller, Post, Delete, Param, UseInterceptors, UploadedFile, HttpCode, HttpStatus, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { Throttle } from '@nestjs/throttler';
 import { UploadService } from './upload.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -26,9 +27,17 @@ export class UploadController {
    *     limits: Layer 2 — 2MB hard cap, one file per request
    *   UploadService.validateAndStore() performs Layers 3 and 4 (magic
    *   byte validation, UUID filename generation) and writes the audit log.
+   * - @Throttle: without a limit here, an authenticated Manager/Admin
+   *   account (or a stolen session for one) could flood this endpoint
+   *   with upload requests, exhausting disk space or CPU (multipart
+   *   parsing + magic-byte checks per request) — a DoS route that
+   *   doesn't require guessing anything, just repeated legitimate-looking
+   *   calls. 20/min is well above any plausible legitimate editing
+   *   session's pace but bounds sustained/automated abuse.
    */
   @Post('menu-item-image')
   @Roles('ADMIN', 'MANAGER')
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   @HttpCode(HttpStatus.CREATED)
   @UseInterceptors(
     FileInterceptor('image', {

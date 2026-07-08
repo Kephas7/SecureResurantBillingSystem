@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { join } from 'path';
 import { writeFile, unlink } from 'fs/promises';
-import { fileTypeFromBuffer } from 'file-type';
+import { fromBuffer as fileTypeFromBuffer } from 'file-type';
 import { AuditLogService } from '../../common/services/audit-log.service';
 
 /**
