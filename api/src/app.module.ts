@@ -12,6 +12,7 @@ import { OrdersModule } from "./modules/orders/orders.module";
 import { InventoryModule } from "./modules/inventory/inventory.module";
 import { BillingModule } from "./modules/billing/billing.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { UploadModule } from "./modules/upload/upload.module";
 import { validateEnv } from "./config/env.validation";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
@@ -55,6 +56,7 @@ import { RolesGuard } from "./common/guards/roles.guard";
     InventoryModule,
     BillingModule,
     ReportsModule,
+    UploadModule,
   ],
   controllers: [],
   providers: [

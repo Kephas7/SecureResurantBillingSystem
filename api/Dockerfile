@@ -34,6 +34,13 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
+# Uploaded images are written here at runtime (see UploadService).
+# Created and chown'd to appuser explicitly - a bare `mkdir` here would
+# leave the directory root-owned (this RUN still executes as root,
+# before the USER switch below), which the non-root runtime user then
+# could not write into, failing every upload with EACCES.
+RUN mkdir -p uploads && chown -R appuser:appgroup uploads
+
 USER appuser
 
 EXPOSE 4000

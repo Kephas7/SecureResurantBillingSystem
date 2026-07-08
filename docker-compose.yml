@@ -59,6 +59,12 @@ services:
         condition: service_healthy
     ports:
       - "${API_PORT:-4000}:4000"
+    volumes:
+      # Uploaded menu item images (see UploadService) - without this,
+      # they'd live only on the container's writable layer and be lost
+      # every time the container is recreated (e.g. `docker compose up
+      # --build`). Not a substitute for real backups.
+      - uploads_data:/app/uploads
     networks:
       - internal
       - public
@@ -87,6 +93,7 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:
 
 networks:
   # NOTE (security decision, document in report): in production this network

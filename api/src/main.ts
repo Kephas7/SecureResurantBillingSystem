@@ -1,11 +1,13 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { ValidationPipe } from "@nestjs/common";
 import helmet from "helmet";
 import session from "express-session";
 import RedisStore from "connect-redis";
 import Redis from "ioredis";
 import { json, urlencoded, Request, Response, NextFunction } from "express";
+import { join } from "path";
 import { AppModule } from "./app.module";
 
 // HTTP security headers are a defence-in-depth layer. They do not
@@ -20,7 +22,7 @@ async function bootstrap() {
   // consume the request stream first, silently making any body-parser
   // middleware added afterwards a no-op with no size limit actually
   // enforced.
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
 
   app.use(
     helmet({
@@ -214,6 +216,31 @@ async function bootstrap() {
       });
     },
   );
+
+  /**
+   * SECURITY: Static file serving for uploaded images.
+   *
+   * Only the /uploads path is exposed as static assets. Files are
+   * served as raw bytes with no server-side execution, so even if an
+   * attacker somehow got a script-bearing file past every upload
+   * validation layer (see upload.service.ts), the static file handler
+   * has no mechanism to execute it — it can only ever be returned as
+   * a byte stream with a content type Express infers from the extension.
+   *
+   * Files are stored with UUID names (see UploadService), so:
+   *   - No enumeration is possible (names are not sequential)
+   *   - No path traversal is possible (NestExpressApplication's
+   *     staticAssets resolves paths relative to the destination and
+   *     Express's static middleware itself rejects "..' segments)
+   *   - Original filenames are never used in URLs
+   *
+   * In production, this should be replaced with a CDN or a dedicated
+   * static file server (e.g. nginx) serving the uploads directory
+   * directly, with the API only handling upload/delete operations.
+   */
+  app.useStaticAssets(join(process.cwd(), "uploads"), {
+    prefix: "/uploads/",
+  });
 
   const port = process.env.API_PORT || 4000;
   await app.listen(port);
