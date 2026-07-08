@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { UtensilsCrossed } from "lucide-react";
 import { authApi } from "../../../lib/api";
 import { resetPasswordSchema, type ResetPasswordFormData } from "../../../lib/validations/auth.schemas";
 import { PasswordStrengthMeter } from "../../../components/auth/PasswordStrengthMeter";
@@ -46,38 +47,51 @@ function ResetPasswordForm(): JSX.Element | null {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <div>
-        <label htmlFor="newPassword">New password</label>
-        <input
-          id="newPassword"
-          type="password"
-          autoComplete="new-password"
-          {...register("newPassword")}
-          style={{ width: "100%" }}
-        />
-        <PasswordStrengthMeter password={newPassword} />
-        {errors.newPassword && <p className="error-msg">{errors.newPassword.message}</p>}
+    <div className="login-card">
+      <div className="login-logo">
+        <UtensilsCrossed size={22} />
+        Restaurant Secure
       </div>
+      <h1 className="login-title">Reset your password</h1>
+      <p className="login-subtitle">Choose a new password for your account</p>
 
-      <div>
-        <label htmlFor="confirmPassword">Confirm new password</label>
-        <input
-          id="confirmPassword"
-          type="password"
-          autoComplete="new-password"
-          {...register("confirmPassword")}
-          style={{ width: "100%" }}
-        />
-        {errors.confirmPassword && <p className="error-msg">{errors.confirmPassword.message}</p>}
-      </div>
+      <form onSubmit={handleSubmit(onSubmit)} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div className="form-group">
+          <label className="form-label" htmlFor="newPassword">
+            New password
+          </label>
+          <input
+            id="newPassword"
+            type="password"
+            autoComplete="new-password"
+            {...register("newPassword")}
+            className={`form-input${errors.newPassword ? " error" : ""}`}
+          />
+          <PasswordStrengthMeter password={newPassword} />
+          {errors.newPassword && <p className="form-error">{errors.newPassword.message}</p>}
+        </div>
 
-      {serverError && <p className="error-msg">{serverError}</p>}
+        <div className="form-group">
+          <label className="form-label" htmlFor="confirmPassword">
+            Confirm new password
+          </label>
+          <input
+            id="confirmPassword"
+            type="password"
+            autoComplete="new-password"
+            {...register("confirmPassword")}
+            className={`form-input${errors.confirmPassword ? " error" : ""}`}
+          />
+          {errors.confirmPassword && <p className="form-error">{errors.confirmPassword.message}</p>}
+        </div>
 
-      <button type="submit" disabled={isSubmitting} style={{ width: "100%" }}>
-        {isSubmitting ? "Resetting..." : "Reset password"}
-      </button>
-    </form>
+        {serverError && <p className="form-error">{serverError}</p>}
+
+        <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting} style={{ justifyContent: "center" }}>
+          {isSubmitting ? "Resetting..." : "Reset password"}
+        </button>
+      </form>
+    </div>
   );
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { UtensilsCrossed } from "lucide-react";
 import { authApi } from "../../../lib/api";
 
 export default function MfaSetupPage(): JSX.Element {
@@ -57,14 +58,24 @@ export default function MfaSetupPage(): JSX.Element {
   }
 
   if (isLoading) {
-    return <p>Loading...</p>;
+    return (
+      <div className="login-card">
+        <p className="text-muted">Loading...</p>
+      </div>
+    );
   }
 
   if (isDone) {
     return (
-      <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-        <p className="success-msg">MFA enabled successfully.</p>
-        <button type="button" onClick={() => router.push("/dashboard")}>
+      <div className="login-card">
+        <div className="login-logo">
+          <UtensilsCrossed size={22} />
+          Restaurant Secure
+        </div>
+        <div className="alert alert-success">
+          <span>MFA enabled successfully.</span>
+        </div>
+        <button type="button" className="btn btn-primary w-full" style={{ justifyContent: "center" }} onClick={() => router.push("/dashboard")}>
           Go to dashboard
         </button>
       </div>
@@ -72,19 +83,26 @@ export default function MfaSetupPage(): JSX.Element {
   }
 
   return (
-    <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <p>Scan this QR code with Google Authenticator, Authy, or any TOTP app</p>
+    <div className="login-card">
+      <div className="login-logo">
+        <UtensilsCrossed size={22} />
+        Restaurant Secure
+      </div>
+      <h1 className="login-title">Set up two-factor authentication</h1>
+      <p className="login-subtitle">Scan this QR code with Google Authenticator, Authy, or any TOTP app</p>
 
       {qrCodeDataUrl && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={qrCodeDataUrl} alt="MFA QR code" width={200} height={200} style={{ alignSelf: "center" }} />
+        <img src={qrCodeDataUrl} alt="MFA QR code" width={180} height={180} style={{ display: "block", margin: "0 auto 1rem" }} />
       )}
 
-      {!qrCodeDataUrl && otpauthUrl && <p className="error-msg">QR code unavailable - use manual entry instead.</p>}
+      {!qrCodeDataUrl && otpauthUrl && <p className="form-error">QR code unavailable - use manual entry instead.</p>}
 
       <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-        <div>
-          <label htmlFor="token">Verification code</label>
+        <div className="form-group">
+          <label className="form-label" htmlFor="token">
+            Verification code
+          </label>
           <input
             id="token"
             type="text"
@@ -92,13 +110,13 @@ export default function MfaSetupPage(): JSX.Element {
             maxLength={6}
             value={token}
             onChange={(e) => setToken(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            style={{ width: "100%" }}
+            className="form-input"
           />
         </div>
 
-        {error && <p className="error-msg">{error}</p>}
+        {error && <p className="form-error">{error}</p>}
 
-        <button type="submit" disabled={isSubmitting || token.length !== 6}>
+        <button type="submit" disabled={isSubmitting || token.length !== 6} className="btn btn-primary w-full" style={{ justifyContent: "center" }}>
           {isSubmitting ? "Verifying..." : "Enable MFA"}
         </button>
       </form>

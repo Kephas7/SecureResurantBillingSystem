@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { UtensilsCrossed } from "lucide-react";
 import { authApi } from "../../../lib/api";
 import { useAuth } from "../../../context/auth.context";
 
@@ -58,26 +59,40 @@ export default function MfaVerifyPage(): JSX.Element {
   }
 
   return (
-    <div className="card" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      <p>Enter the 6-digit code from your authenticator app</p>
+    <div className="login-card">
+      <div className="login-logo">
+        <UtensilsCrossed size={22} />
+        Restaurant Secure
+      </div>
+      <h1 className="login-title">Two-factor verification</h1>
+      <p className="login-subtitle">Enter the 6-digit code from your authenticator app</p>
 
-      <input
-        ref={inputRef}
-        type="text"
-        inputMode="numeric"
-        maxLength={6}
-        autoComplete="one-time-code"
-        value={code}
-        onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-        disabled={isSubmitting}
-        style={{ width: "100%", letterSpacing: "0.5rem", textAlign: "center", fontSize: "1.25rem" }}
-      />
+      <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <input
+          ref={inputRef}
+          type="text"
+          inputMode="numeric"
+          maxLength={6}
+          autoComplete="one-time-code"
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          disabled={isSubmitting}
+          className="form-input"
+          style={{ letterSpacing: "0.5rem", textAlign: "center", fontSize: "1.25rem" }}
+        />
 
-      {error && <p className="error-msg">{error}</p>}
+        {error && <p className="form-error">{error}</p>}
 
-      <button type="button" onClick={() => void submit(code)} disabled={isSubmitting || code.length !== 6}>
-        {isSubmitting ? "Verifying..." : "Verify"}
-      </button>
+        <button
+          type="button"
+          onClick={() => void submit(code)}
+          disabled={isSubmitting || code.length !== 6}
+          className="btn btn-primary w-full"
+          style={{ justifyContent: "center" }}
+        >
+          {isSubmitting ? "Verifying..." : "Verify"}
+        </button>
+      </div>
     </div>
   );
 }

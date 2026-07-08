@@ -31,7 +31,7 @@ export function PasswordStrengthMeter({ password }: { password: string }): JSX.E
               height: "0.25rem",
               flex: 1,
               borderRadius: "9999px",
-              backgroundColor: segment < score ? colour : "var(--color-border)",
+              backgroundColor: segment < score ? colour : "var(--border)",
               transition: "background-color 0.2s",
             }}
           />
