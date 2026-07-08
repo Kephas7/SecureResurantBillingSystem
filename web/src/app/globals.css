@@ -1,21 +1,21 @@
 :root {
-  /* Brand */
-  --brand: #2563eb;
-  --brand-hover: #1d4ed8;
-  --brand-light: #eff6ff;
-  --brand-border: #bfdbfe;
+  /* Brand — warm orange */
+  --brand: #ea580c;
+  --brand-hover: #c2410c;
+  --brand-light: #fff7ed;
+  --brand-border: #fed7aa;
 
-  /* Neutrals */
-  --bg: #f8fafc;
+  /* Neutrals — warm stone instead of cold slate */
+  --bg: #fafaf9;
   --surface: #ffffff;
-  --surface-hover: #f8fafc;
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
+  --surface-hover: #f5f4f1;
+  --border: #e7e5e0;
+  --border-strong: #d4d1cb;
 
-  /* Text */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  /* Text — warm stone tones */
+  --text-primary: #1c1917;
+  --text-secondary: #57534e;
+  --text-muted: #a8a29e;
   --text-inverse: #ffffff;
 
   /* Semantic colours */
@@ -47,6 +47,11 @@
 
   /* Sidebar */
   --sidebar-width: 240px;
+
+  /* POS screen */
+  --pos-sidebar-bg: #1c1917;
+  --pos-sidebar-active: #ea580c;
+  --pos-bg: #f5f4f1;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
