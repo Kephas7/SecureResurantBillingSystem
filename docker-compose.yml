@@ -82,6 +82,7 @@ services:
         # through its mapped port - not by one container calling another.
         NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-4000}
         NEXT_PUBLIC_CAPTCHA_SITE_KEY: ${NEXT_PUBLIC_CAPTCHA_SITE_KEY:-}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
     restart: unless-stopped
     env_file: .env
     depends_on:
