@@ -151,13 +151,30 @@ export default function BillingPage(): JSX.Element {
   }
 
   async function handlePaymentSuccess(): Promise<void> {
-    // The invoice's status here still reflects what the webhook has
-    // processed so far - Stripe's webhook (not this browser confirming
-    // the charge) is the sole authority that actually marks the invoice
-    // PAID, so a very recent payment may briefly still show UNPAID
-    // until the webhook is delivered and processed.
+    // Stripe's webhook (not this browser confirming the charge) is the
+    // sole authority that actually marks the invoice PAID, and it's
+    // delivered asynchronously - it can arrive a moment after this
+    // browser sees confirmPayment succeed. Capture the id before closing
+    // the modal (which clears paymentInvoice), then poll briefly so the
+    // list picks up PAID on its own instead of requiring a manual refresh.
+    const invoiceId = paymentInvoice?.id;
     closePaymentModal();
     await loadAll();
+
+    if (!invoiceId) return;
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        const invoice = await billingApi.getInvoice(invoiceId);
+        if (invoice.status !== "UNPAID") {
+          await loadAll();
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
   }
 
   function openRefundModal(invoice: Invoice): void {
