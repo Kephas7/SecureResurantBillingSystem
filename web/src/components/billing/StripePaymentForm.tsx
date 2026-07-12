@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { AlertCircle } from "lucide-react";
 import { getStripe } from "../../lib/stripe";
@@ -10,6 +10,36 @@ interface StripePaymentFormProps {
   amountLabel: string;
   onSuccess: () => void;
   onCancel: () => void;
+}
+
+const TOAST_DURATION_MS = 8000;
+
+function ErrorToast({ message, onDismiss }: { message: string; onDismiss: () => void }): JSX.Element {
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, TOAST_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [message, onDismiss]);
+
+  return (
+    <div
+      className="alert alert-danger"
+      role="alert"
+      style={{
+        position: "fixed",
+        bottom: "1.5rem",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 2000,
+        boxShadow: "var(--shadow-md)",
+        maxWidth: "28rem",
+        cursor: "pointer",
+      }}
+      onClick={onDismiss}
+    >
+      <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+      <span>{message}</span>
+    </div>
+  );
 }
 
 // SECURITY: card details are entered directly into Stripe's own
@@ -31,29 +61,46 @@ function CheckoutForm({ amountLabel, onSuccess, onCancel }: Omit<StripePaymentFo
     setIsSubmitting(true);
     setError(null);
 
-    // redirect: 'if_required' keeps the cashier on this page for
-    // payment methods (cards) that don't need an off-site redirect -
-    // the invoice is only ever marked PAID by the webhook, so this
-    // client-side result is used purely to drive the UI, not as the
-    // source of truth for payment success.
-    const { error: confirmError, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      redirect: "if_required",
-    });
+    try {
+      // Validates and collects the selected payment method (card, Link,
+      // etc.) before confirming - without this, an incomplete/invalid
+      // field can fail silently instead of surfacing a validation error.
+      const { error: submitError } = await elements.submit();
+      if (submitError) {
+        setError(submitError.message ?? "Please check your payment details");
+        return;
+      }
 
-    if (confirmError) {
-      setError(confirmError.message ?? "Payment failed");
+      // redirect: 'if_required' keeps the cashier on this page for
+      // payment methods (cards) that don't need an off-site redirect -
+      // the invoice is only ever marked PAID by the webhook, so this
+      // client-side result is used purely to drive the UI, not as the
+      // source of truth for payment success.
+      const { error: confirmError, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        redirect: "if_required",
+      });
+
+      if (confirmError) {
+        setError(confirmError.message ?? "Payment failed");
+        return;
+      }
+
+      if (paymentIntent?.status === "succeeded") {
+        onSuccess();
+        return;
+      }
+
+      setError(`Payment status: ${paymentIntent?.status ?? "unknown"}`);
+    } catch (err) {
+      // Catches anything confirmPayment/submit throw rather than resolve
+      // with an `error` field - without this, an unexpected rejection
+      // left isSubmitting stuck `true` forever with no feedback at all,
+      // which is exactly what looked like "the Pay button does nothing".
+      setError(err instanceof Error ? err.message : "Something went wrong processing the payment. Please try again.");
+    } finally {
       setIsSubmitting(false);
-      return;
     }
-
-    if (paymentIntent?.status === "succeeded") {
-      onSuccess();
-      return;
-    }
-
-    setError(`Payment status: ${paymentIntent?.status ?? "unknown"}`);
-    setIsSubmitting(false);
   }
 
   return (
@@ -69,12 +116,7 @@ function CheckoutForm({ amountLabel, onSuccess, onCancel }: Omit<StripePaymentFo
           </p>
         )}
 
-        {error && (
-          <div className="alert alert-danger" style={{ marginTop: "0.75rem" }}>
-            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-            <span>{error}</span>
-          </div>
-        )}
+        {error && <ErrorToast message={error} onDismiss={() => setError(null)} />}
       </div>
       <div className="panel-footer">
         <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={isSubmitting}>
