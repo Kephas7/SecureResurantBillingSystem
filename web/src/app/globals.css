@@ -285,6 +285,14 @@ body {
   padding: 0.5rem;
 }
 
+/* The logout button reuses the shared .btn-primary class (padding:
+   0.5rem 1rem), which is fine at full width but leaves zero room for
+   its icon once the sidebar shrinks to 64px - override just its
+   padding here rather than touching .btn globally. */
+.sidebar-collapsed .sidebar-user .btn {
+  padding: 0.5rem;
+}
+
 .sidebar-collapsed .sidebar-logo-text { display: none; }
 .sidebar-collapsed .sidebar-logo-sub { display: none; }
 .sidebar-collapsed .sidebar-section { display: none; }
