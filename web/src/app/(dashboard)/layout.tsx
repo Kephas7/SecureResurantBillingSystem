@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { UtensilsCrossed, LogOut } from "lucide-react";
+import { UtensilsCrossed, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "../../context/auth.context";
 import { navSectionsForRole } from "../../lib/nav-items";
 import { roleBadgeClass } from "../../lib/roles";
+
+const SIDEBAR_EXPANDED_WIDTH = "248px";
+const SIDEBAR_COLLAPSED_WIDTH = "64px";
 
 function initials(fullName: string): string {
   return fullName
@@ -21,12 +24,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const { user, isLoading, logout } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.push("/login");
     }
   }, [isLoading, user, router]);
+
+  // Restores the sidebar's expanded/collapsed state on navigation -
+  // read once on mount rather than via useState's initializer since
+  // localStorage isn't available during server-side rendering.
+  useEffect(() => {
+    const saved = localStorage.getItem("sidebar-collapsed");
+    if (saved === "true") setCollapsed(true);
+  }, []);
+
+  function toggleSidebar(): void {
+    const next = !collapsed;
+    setCollapsed(next);
+    localStorage.setItem("sidebar-collapsed", String(next));
+  }
 
   async function handleLogout(): Promise<void> {
     await logout();
@@ -41,11 +59,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      <aside
+        className={`sidebar${collapsed ? " sidebar-collapsed" : ""}`}
+        style={{ width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH }}
+      >
         <Link href="/dashboard" className="sidebar-logo">
-          <UtensilsCrossed size={20} />
-          Restaurant Secure
+          <div className="sidebar-logo-icon">
+            <UtensilsCrossed size={18} color="white" />
+          </div>
+          <span className="sidebar-logo-text">Restaurant Secure</span>
         </Link>
+
+        <div className="sidebar-toggle-wrap">
+          <button
+            type="button"
+            className="sidebar-toggle"
+            onClick={toggleSidebar}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+        </div>
 
         {/* Navigation items are hidden based on role for UX only. The
             server enforces access on every API call regardless of what
@@ -65,9 +100,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     key={item.key}
                     href={item.href}
                     className={`nav-link${isActive ? " active" : ""}`}
+                    title={item.label}
                   >
                     <Icon size={16} />
-                    {item.label}
+                    <span className="nav-label">{item.label}</span>
                   </Link>
                 );
               })}
@@ -77,20 +113,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <div className="sidebar-user">
           <div className="sidebar-user-info">
-            <div className="avatar">{initials(user.fullName)}</div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="user-name">{user.fullName}</div>
-              <span className={`badge ${roleBadgeClass(user.role)}`}>{user.role}</span>
+            <div className="avatar" title={`${user.fullName} (${user.role})`}>
+              {initials(user.fullName)}
             </div>
+            {!collapsed && (
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="user-name">{user.fullName}</div>
+                <span className={`badge ${roleBadgeClass(user.role)}`}>{user.role}</span>
+              </div>
+            )}
           </div>
           <button type="button" className="btn btn-primary w-full" style={{ justifyContent: "center" }} onClick={() => void handleLogout()}>
             <LogOut size={16} />
-            Logout
+            <span className="nav-label">Logout</span>
           </button>
         </div>
       </aside>
 
-      <div className="main">{children}</div>
+      <div className="main" style={{ marginLeft: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH }}>
+        {children}
+      </div>
     </div>
   );
 }
