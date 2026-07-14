@@ -103,22 +103,25 @@ function CheckoutForm({ amountLabel, onSuccess, onCancel }: Omit<StripePaymentFo
     }
   }
 
+  // No assumptions about panel-body/panel-footer wrapping here - this
+  // renders as a self-contained block so callers can embed it inline
+  // (e.g. inside an existing panel's own body) rather than only as an
+  // entire panel's content.
   return (
-    <form onSubmit={(e) => void handleSubmit(e)} style={{ display: "contents" }}>
-      <div className="panel-body">
-        <PaymentElement />
+    <form onSubmit={(e) => void handleSubmit(e)}>
+      <PaymentElement />
 
-        {/* Dev-only hint - Stripe test cards never charge real money */}
-        {process.env.NODE_ENV !== "production" && (
-          <p className="text-muted text-sm" style={{ marginTop: "0.75rem" }}>
-            Test cards: <code>4242 4242 4242 4242</code> (succeeds), <code>4000 0000 0000 0002</code> (declined).
-            Any future expiry, any CVC, any postcode.
-          </p>
-        )}
+      {/* Dev-only hint - Stripe test cards never charge real money */}
+      {process.env.NODE_ENV !== "production" && (
+        <p className="text-muted text-sm" style={{ marginTop: "0.75rem" }}>
+          Test cards: <code>4242 4242 4242 4242</code> (succeeds), <code>4000 0000 0000 0002</code> (declined).
+          Any future expiry, any CVC, any postcode.
+        </p>
+      )}
 
-        {error && <ErrorToast message={error} onDismiss={() => setError(null)} />}
-      </div>
-      <div className="panel-footer">
+      {error && <ErrorToast message={error} onDismiss={() => setError(null)} />}
+
+      <div className="flex gap-3" style={{ justifyContent: "flex-end", marginTop: "1.25rem" }}>
         <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={isSubmitting}>
           Cancel
         </button>

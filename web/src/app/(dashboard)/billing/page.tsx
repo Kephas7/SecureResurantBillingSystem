@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Banknote, CreditCard, Smartphone, AlertCircle, X } from "lucide-react";
+import { Banknote, CreditCard, AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import {
   billingApi,
@@ -31,7 +31,6 @@ const STATUS_BADGE_CLASS: Record<InvoiceStatus, string> = {
 const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: typeof Banknote }[] = [
   { value: "CASH", label: "Cash", icon: Banknote },
   { value: "CARD", label: "Card", icon: CreditCard },
-  { value: "MOBILE", label: "Mobile", icon: Smartphone },
 ];
 
 function money(value: string | number): string {
@@ -46,20 +45,26 @@ export default function BillingPage(): JSX.Element {
   const [page, setPage] = useState(1);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
 
   const [invoiceOrder, setInvoiceOrder] = useState<Order | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [discountInput, setDiscountInput] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
+  // Card payment step, inline within the same Create Invoice panel:
+  // set once the invoice + PaymentIntent are created, cleared once the
+  // whole panel closes. cardPaymentSucceeded tracks the client-side
+  // Stripe result so the panel can show a "Confirm Payment" step before
+  // closing - the invoice itself is only ever marked PAID by the
+  // webhook, this is purely a UI acknowledgement step.
+  const [cardClientSecret, setCardClientSecret] = useState<string | null>(null);
+  const [cardPaymentSucceeded, setCardPaymentSucceeded] = useState(false);
+  const [pendingInvoiceId, setPendingInvoiceId] = useState<string | null>(null);
+
   const [refundModalInvoice, setRefundModalInvoice] = useState<Invoice | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
   const [refundReason, setRefundReason] = useState("");
   const [isRefunding, setIsRefunding] = useState(false);
-
-  const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
-  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
 
   useEffect(() => {
     void loadAll();
@@ -82,10 +87,16 @@ export default function BillingPage(): JSX.Element {
     setPaymentMethod("CASH");
     setDiscountInput("");
     setActionError(null);
+    setCardClientSecret(null);
+    setCardPaymentSucceeded(false);
+    setPendingInvoiceId(null);
   }
 
   function closeInvoicePanel(): void {
     setInvoiceOrder(null);
+    setCardClientSecret(null);
+    setCardPaymentSucceeded(false);
+    setPendingInvoiceId(null);
   }
 
   function computeTotals(order: Order, discount: number): { subtotal: number; tax: number; total: number } {
@@ -95,70 +106,61 @@ export default function BillingPage(): JSX.Element {
     return { subtotal, tax, total };
   }
 
-  async function handleCreateInvoice(e: React.FormEvent): Promise<void> {
+  // Single entry point for both payment methods. Cash settles
+  // immediately (create + confirm in one click); Card creates the
+  // invoice and a PaymentIntent, then switches this same panel to the
+  // inline Stripe payment step instead of closing - the invoice stays
+  // UNPAID until the webhook confirms the charge.
+  async function handlePanelSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     if (!invoiceOrder) return;
     setIsCreating(true);
     setActionError(null);
     try {
-      await billingApi.createInvoice({
+      const invoice = await billingApi.createInvoice({
         orderId: invoiceOrder.id,
         paymentMethod,
         discountAmount: discountInput ? Number(discountInput) : undefined,
       });
-      closeInvoicePanel();
-      await loadAll();
+
+      if (paymentMethod === "CASH") {
+        await billingApi.confirmPayment(invoice.id);
+        closeInvoicePanel();
+        await loadAll();
+        return;
+      }
+
+      // clientSecret is never logged - only held in component state and
+      // handed straight to Stripe's Elements provider (see
+      // StripePaymentForm), which is the only thing allowed to use it.
+      const { clientSecret } = await billingApi.createPaymentIntent(invoice.id);
+      setPendingInvoiceId(invoice.id);
+      setCardClientSecret(clientSecret);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to create invoice");
+      setActionError(err instanceof Error ? err.message : "Failed to process invoice");
     } finally {
       setIsCreating(false);
     }
   }
 
-  async function handleConfirmPayment(id: string): Promise<void> {
-    setBusyId(id);
-    setActionError(null);
-    try {
-      await billingApi.confirmPayment(id);
-      await loadAll();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to confirm payment");
-    } finally {
-      setBusyId(null);
-    }
+  // Fires when Stripe's client-side confirmPayment reports success -
+  // this is UI feedback only, not the source of truth for payment
+  // status, so it just advances to the "Confirm Payment" step rather
+  // than closing the panel outright.
+  function handleCardPaymentClientSuccess(): void {
+    setCardPaymentSucceeded(true);
   }
 
-  async function openPaymentModal(invoice: Invoice): Promise<void> {
-    setBusyId(invoice.id);
-    setActionError(null);
-    try {
-      // clientSecret is never logged - only held in component state and
-      // handed straight to Stripe's Elements provider (see
-      // StripePaymentForm), which is the only thing allowed to use it.
-      const { clientSecret } = await billingApi.createPaymentIntent(invoice.id);
-      setPaymentInvoice(invoice);
-      setPaymentClientSecret(clientSecret);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to start Stripe payment");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  function closePaymentModal(): void {
-    setPaymentInvoice(null);
-    setPaymentClientSecret(null);
-  }
-
-  async function handlePaymentSuccess(): Promise<void> {
-    // Stripe's webhook (not this browser confirming the charge) is the
-    // sole authority that actually marks the invoice PAID, and it's
-    // delivered asynchronously - it can arrive a moment after this
-    // browser sees confirmPayment succeed. Capture the id before closing
-    // the modal (which clears paymentInvoice), then poll briefly so the
-    // list picks up PAID on its own instead of requiring a manual refresh.
-    const invoiceId = paymentInvoice?.id;
-    closePaymentModal();
+  // The cashier's final acknowledgement after seeing the success step.
+  // Stripe's webhook (not this click) is the sole authority that marks
+  // the invoice PAID, and it's delivered asynchronously - it can arrive
+  // a moment after the browser saw confirmPayment succeed. Capture the
+  // id before closing (which clears pendingInvoiceId), then poll
+  // briefly so the list picks up PAID on its own instead of requiring a
+  // manual refresh.
+  async function handleFinalizeCardPayment(): Promise<void> {
+    const invoiceId = pendingInvoiceId;
+    closeInvoicePanel();
     await loadAll();
 
     if (!invoiceId) return;
@@ -301,26 +303,6 @@ export default function BillingPage(): JSX.Element {
                         <td>{new Date(invoice.createdAt).toLocaleString()}</td>
                         <td>
                           <div className="flex gap-2">
-                            {invoice.status === "UNPAID" && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="btn btn-primary btn-sm"
-                                  disabled={busyId === invoice.id}
-                                  onClick={() => void openPaymentModal(invoice)}
-                                >
-                                  {busyId === invoice.id ? "..." : "Pay with Stripe"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-success btn-sm"
-                                  disabled={busyId === invoice.id}
-                                  onClick={() => void handleConfirmPayment(invoice.id)}
-                                >
-                                  {busyId === invoice.id ? "..." : "Confirm Payment"}
-                                </button>
-                              </>
-                            )}
                             {invoice.status === "PAID" && (
                               <button type="button" className="btn btn-secondary btn-sm" onClick={() => openRefundModal(invoice)}>
                                 Request Refund
@@ -368,105 +350,153 @@ export default function BillingPage(): JSX.Element {
                 <X size={16} />
               </button>
             </div>
-            <form onSubmit={handleCreateInvoice} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <div className="form-group">
-                  <label className="form-label">Order Summary</label>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                    {invoiceOrder.items.map((item) => (
-                      <div key={item.id} className="flex justify-between text-sm">
-                        <span>
-                          {item.quantity}× {item.menuItem.name}
-                        </span>
-                        <span>${money(Number(item.unitPrice ?? 0) * item.quantity)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
 
-                <div className="form-group">
-                  <label className="form-label">Payment Method</label>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.5rem" }}>
-                    {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => {
-                      const selected = paymentMethod === value;
-                      return (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setPaymentMethod(value)}
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            gap: "0.375rem",
-                            padding: "0.75rem 0.5rem",
-                            borderRadius: "var(--radius)",
-                            border: `1px solid ${selected ? "var(--brand)" : "var(--border)"}`,
-                            background: selected ? "var(--brand-light)" : "var(--surface)",
-                            color: selected ? "var(--brand)" : "var(--text-primary)",
-                            cursor: "pointer",
-                            fontSize: "0.75rem",
-                            fontWeight: 600,
-                          }}
-                        >
-                          <Icon size={18} />
-                          {label}
-                        </button>
-                      );
-                    })}
+            <div className="panel-body">
+              {!cardClientSecret && (
+                <form id="invoice-form" onSubmit={(e) => void handlePanelSubmit(e)}>
+                  <div className="form-group">
+                    <label className="form-label">Order Summary</label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+                      {invoiceOrder.items.map((item) => (
+                        <div key={item.id} className="flex justify-between text-sm">
+                          <span>
+                            {item.quantity}× {item.menuItem.name}
+                          </span>
+                          <span>${money(Number(item.unitPrice ?? 0) * item.quantity)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="form-group">
-                  <label className="form-label" htmlFor="discount">
-                    Discount (optional)
-                  </label>
-                  <input
-                    id="discount"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={discountInput}
-                    onChange={(e) => setDiscountInput(e.target.value)}
-                    className="form-input"
-                  />
-                </div>
+                  <div className="form-group">
+                    <label className="form-label">Payment Method</label>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.5rem" }}>
+                      {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => {
+                        const selected = paymentMethod === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setPaymentMethod(value)}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              gap: "0.375rem",
+                              padding: "0.75rem 0.5rem",
+                              borderRadius: "var(--radius)",
+                              border: `1px solid ${selected ? "var(--brand)" : "var(--border)"}`,
+                              background: selected ? "var(--brand-light)" : "var(--surface)",
+                              color: selected ? "var(--brand)" : "var(--text-primary)",
+                              cursor: "pointer",
+                              fontSize: "0.75rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            <Icon size={18} />
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", fontSize: "0.8125rem", paddingTop: "0.5rem", borderTop: "1px solid var(--border)" }}>
-                  <div className="flex justify-between">
-                    <span className="text-muted">Subtotal</span>
-                    <span>${money(subtotal)}</span>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="discount">
+                      Discount (optional)
+                    </label>
+                    <input
+                      id="discount"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={discountInput}
+                      onChange={(e) => setDiscountInput(e.target.value)}
+                      className="form-input"
+                    />
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">Tax (13%)</span>
-                    <span>${money(tax)}</span>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.375rem",
+                      fontSize: "0.8125rem",
+                      paddingTop: "0.5rem",
+                      borderTop: "1px solid var(--border)",
+                    }}
+                  >
+                    <div className="flex justify-between">
+                      <span className="text-muted">Subtotal</span>
+                      <span>${money(subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted">Tax (13%)</span>
+                      <span>${money(tax)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted">Discount</span>
+                      <span>-${money(discountInput || 0)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold" style={{ fontSize: "0.9375rem" }}>
+                      <span>Total</span>
+                      <span>${money(total)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted">Discount</span>
-                    <span>-${money(discountInput || 0)}</span>
-                  </div>
-                  <div className="flex justify-between font-semibold" style={{ fontSize: "0.9375rem" }}>
-                    <span>Total</span>
+
+                  {actionError && (
+                    <div className="alert alert-danger" style={{ marginTop: "1rem" }}>
+                      <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                      <span>{actionError}</span>
+                    </div>
+                  )}
+                </form>
+              )}
+
+              {cardClientSecret && !cardPaymentSucceeded && (
+                <>
+                  <div
+                    className="flex justify-between font-semibold"
+                    style={{ fontSize: "0.9375rem", paddingBottom: "1rem", borderBottom: "1px solid var(--border)", marginBottom: "1rem" }}
+                  >
+                    <span>Amount due</span>
                     <span>${money(total)}</span>
                   </div>
-                </div>
+                  <StripePaymentForm
+                    clientSecret={cardClientSecret}
+                    amountLabel={`$${money(total)}`}
+                    onSuccess={handleCardPaymentClientSuccess}
+                    onCancel={closeInvoicePanel}
+                  />
+                </>
+              )}
 
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
-              </div>
+              {cardPaymentSucceeded && (
+                <div className="alert alert-success">
+                  <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                  <span>Payment successful. Click Confirm Payment to finish.</span>
+                </div>
+              )}
+            </div>
+
+            {!cardClientSecret && (
               <div className="panel-footer">
                 <button type="button" className="btn btn-secondary" onClick={closeInvoicePanel}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={isCreating}>
-                  {isCreating ? "Generating..." : "Generate Invoice"}
+                <button type="submit" form="invoice-form" className="btn btn-primary" disabled={isCreating}>
+                  {isCreating ? "Processing..." : paymentMethod === "CASH" ? "Confirm Payment" : "Continue to Payment"}
                 </button>
               </div>
-            </form>
+            )}
+
+            {cardPaymentSucceeded && (
+              <div className="panel-footer">
+                <button type="button" className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={() => void handleFinalizeCardPayment()}>
+                  Confirm Payment
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -531,24 +561,6 @@ export default function BillingPage(): JSX.Element {
         </div>
       )}
 
-      {paymentInvoice && paymentClientSecret && (
-        <div className="panel-overlay" onClick={closePaymentModal}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">Pay {paymentInvoice.invoiceNumber} with Stripe</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={closePaymentModal} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-            <StripePaymentForm
-              clientSecret={paymentClientSecret}
-              amountLabel={`$${money(paymentInvoice.totalAmount)}`}
-              onSuccess={() => void handlePaymentSuccess()}
-              onCancel={closePaymentModal}
-            />
-          </div>
-        </div>
-      )}
     </>
   );
 }
