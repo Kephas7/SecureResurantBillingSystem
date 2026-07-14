@@ -50,7 +50,7 @@ function ResetPasswordForm(): JSX.Element | null {
     <div className="login-card">
       <div className="login-logo">
         <UtensilsCrossed size={22} />
-        Restaurant Secure
+        Big Bites
       </div>
       <h1 className="login-title">Reset your password</h1>
       <p className="login-subtitle">Choose a new password for your account</p>

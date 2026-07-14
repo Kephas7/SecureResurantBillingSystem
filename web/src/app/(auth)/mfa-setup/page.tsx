@@ -70,7 +70,7 @@ export default function MfaSetupPage(): JSX.Element {
       <div className="login-card">
         <div className="login-logo">
           <UtensilsCrossed size={22} />
-          Restaurant Secure
+          Big Bites
         </div>
         <div className="alert alert-success">
           <span>MFA enabled successfully.</span>
@@ -86,7 +86,7 @@ export default function MfaSetupPage(): JSX.Element {
     <div className="login-card">
       <div className="login-logo">
         <UtensilsCrossed size={22} />
-        Restaurant Secure
+        Big Bites
       </div>
       <h1 className="login-title">Set up two-factor authentication</h1>
       <p className="login-subtitle">Scan this QR code with Google Authenticator, Authy, or any TOTP app</p>

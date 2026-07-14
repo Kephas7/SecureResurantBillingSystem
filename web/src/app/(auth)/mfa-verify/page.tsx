@@ -62,7 +62,7 @@ export default function MfaVerifyPage(): JSX.Element {
     <div className="login-card">
       <div className="login-logo">
         <UtensilsCrossed size={22} />
-        Restaurant Secure
+        Big Bites
       </div>
       <h1 className="login-title">Two-factor verification</h1>
       <p className="login-subtitle">Enter the 6-digit code from your authenticator app</p>

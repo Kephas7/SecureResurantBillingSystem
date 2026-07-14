@@ -67,7 +67,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="sidebar-logo-icon">
             <UtensilsCrossed size={18} color="white" />
           </div>
-          <span className="sidebar-logo-text">Restaurant Secure</span>
+          <span className="sidebar-logo-text">Big Bites</span>
         </Link>
 
         <div className="sidebar-toggle-wrap">

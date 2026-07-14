@@ -65,7 +65,7 @@ function LoginForm(): JSX.Element {
     <div className="login-card">
       <div className="login-logo">
         <UtensilsCrossed size={28} />
-        Restaurant Secure
+        Big Bites
       </div>
 
       <p className="login-subtitle">Sign in to your account</p>

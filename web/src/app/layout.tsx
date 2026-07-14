@@ -3,7 +3,7 @@ import { AuthProvider } from "../context/auth.context";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Restaurant Secure | Management System",
+  title: "Big Bites | Management System",
   description: "Secure Restaurant Billing & Management System",
 };
 
