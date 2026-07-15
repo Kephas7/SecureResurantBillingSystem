@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Banknote, CreditCard, AlertCircle, CheckCircle2, X } from "lucide-react";
+import { Banknote, CreditCard, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import {
   billingApi,
@@ -13,6 +13,7 @@ import {
   type PaginatedInvoices,
 } from "../../../lib/api";
 import { StripePaymentForm } from "../../../components/billing/StripePaymentForm";
+import Modal from "../../../components/ui/Modal";
 
 // Display-only estimate to preview the total before submission. The
 // authoritative calculation (including the real TAX_RATE from env) is
@@ -341,226 +342,221 @@ export default function BillingPage(): JSX.Element {
         </div>
       </div>
 
-      {invoiceOrder && (
-        <div className="panel-overlay" onClick={closeInvoicePanel}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">Create Invoice - Table {invoiceOrder.table.number}</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={closeInvoicePanel} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="panel-body">
-              {!cardClientSecret && (
-                <form id="invoice-form" onSubmit={(e) => void handlePanelSubmit(e)}>
-                  <div className="form-group">
-                    <label className="form-label">Order Summary</label>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                      {invoiceOrder.items.map((item) => (
-                        <div key={item.id} className="flex justify-between text-sm">
-                          <span>
-                            {item.quantity}× {item.menuItem.name}
-                          </span>
-                          <span>${money(Number(item.unitPrice ?? 0) * item.quantity)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Payment Method</label>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.5rem" }}>
-                      {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => {
-                        const selected = paymentMethod === value;
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => setPaymentMethod(value)}
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "center",
-                              gap: "0.375rem",
-                              padding: "0.75rem 0.5rem",
-                              borderRadius: "var(--radius)",
-                              border: `1px solid ${selected ? "var(--brand)" : "var(--border)"}`,
-                              background: selected ? "var(--brand-light)" : "var(--surface)",
-                              color: selected ? "var(--brand)" : "var(--text-primary)",
-                              cursor: "pointer",
-                              fontSize: "0.75rem",
-                              fontWeight: 600,
-                            }}
-                          >
-                            <Icon size={18} />
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="discount">
-                      Discount (optional)
-                    </label>
-                    <input
-                      id="discount"
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={discountInput}
-                      onChange={(e) => setDiscountInput(e.target.value)}
-                      className="form-input"
-                    />
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "0.375rem",
-                      fontSize: "0.8125rem",
-                      paddingTop: "0.5rem",
-                      borderTop: "1px solid var(--border)",
-                    }}
-                  >
-                    <div className="flex justify-between">
-                      <span className="text-muted">Subtotal</span>
-                      <span>${money(subtotal)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Tax (13%)</span>
-                      <span>${money(tax)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Discount</span>
-                      <span>-${money(discountInput || 0)}</span>
-                    </div>
-                    <div className="flex justify-between font-semibold" style={{ fontSize: "0.9375rem" }}>
-                      <span>Total</span>
-                      <span>${money(total)}</span>
-                    </div>
-                  </div>
-
-                  {actionError && (
-                    <div className="alert alert-danger" style={{ marginTop: "1rem" }}>
-                      <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                      <span>{actionError}</span>
-                    </div>
-                  )}
-                </form>
-              )}
-
-              {cardClientSecret && !cardPaymentSucceeded && (
+      <Modal
+        isOpen={Boolean(invoiceOrder)}
+        onClose={closeInvoicePanel}
+        title={invoiceOrder ? `Create Invoice - Table ${invoiceOrder.table.number}` : "Create Invoice"}
+        size="md"
+        footer={
+          cardClientSecret
+            ? cardPaymentSucceeded
+              ? (
+                  <button type="button" className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={() => void handleFinalizeCardPayment()}>
+                    Confirm Payment
+                  </button>
+                )
+              : null // StripePaymentForm renders its own Cancel/Pay buttons inline
+            : (
                 <>
-                  <div
-                    className="flex justify-between font-semibold"
-                    style={{ fontSize: "0.9375rem", paddingBottom: "1rem", borderBottom: "1px solid var(--border)", marginBottom: "1rem" }}
-                  >
-                    <span>Amount due</span>
-                    <span>${money(total)}</span>
-                  </div>
-                  <StripePaymentForm
-                    clientSecret={cardClientSecret}
-                    amountLabel={`$${money(total)}`}
-                    onSuccess={handleCardPaymentClientSuccess}
-                    onCancel={closeInvoicePanel}
-                  />
+                  <button type="button" className="btn btn-secondary" onClick={closeInvoicePanel}>
+                    Cancel
+                  </button>
+                  <button type="submit" form="invoice-form" className="btn btn-primary" disabled={isCreating}>
+                    {isCreating ? "Processing..." : paymentMethod === "CASH" ? "Confirm Payment" : "Continue to Payment"}
+                  </button>
                 </>
-              )}
-
-              {cardPaymentSucceeded && (
-                <div className="alert alert-success">
-                  <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                  <span>Payment successful. Click Confirm Payment to finish.</span>
-                </div>
-              )}
-            </div>
+              )
+        }
+      >
+        {invoiceOrder && (
+          <>
+            {actionError && (
+              <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+                <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                <span>{actionError}</span>
+              </div>
+            )}
 
             {!cardClientSecret && (
-              <div className="panel-footer">
-                <button type="button" className="btn btn-secondary" onClick={closeInvoicePanel}>
-                  Cancel
-                </button>
-                <button type="submit" form="invoice-form" className="btn btn-primary" disabled={isCreating}>
-                  {isCreating ? "Processing..." : paymentMethod === "CASH" ? "Confirm Payment" : "Continue to Payment"}
-                </button>
-              </div>
+              <form id="invoice-form" onSubmit={(e) => void handlePanelSubmit(e)} style={{ display: "contents" }}>
+                <div className="form-group">
+                  <label className="form-label">Order Summary</label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+                    {invoiceOrder.items.map((item) => (
+                      <div key={item.id} className="flex justify-between text-sm">
+                        <span>
+                          {item.quantity}× {item.menuItem.name}
+                        </span>
+                        <span>${money(Number(item.unitPrice ?? 0) * item.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Payment Method</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.5rem" }}>
+                    {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => {
+                      const selected = paymentMethod === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setPaymentMethod(value)}
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "0.375rem",
+                            padding: "0.75rem 0.5rem",
+                            borderRadius: "var(--radius)",
+                            border: `1px solid ${selected ? "var(--brand)" : "var(--border)"}`,
+                            background: selected ? "var(--brand-light)" : "var(--surface)",
+                            color: selected ? "var(--brand)" : "var(--text-primary)",
+                            cursor: "pointer",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Icon size={18} />
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="discount">
+                    Discount (optional)
+                  </label>
+                  <input
+                    id="discount"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={discountInput}
+                    onChange={(e) => setDiscountInput(e.target.value)}
+                    className="form-input"
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.375rem",
+                    fontSize: "0.8125rem",
+                    paddingTop: "0.5rem",
+                    borderTop: "1px solid var(--border)",
+                  }}
+                >
+                  <div className="flex justify-between">
+                    <span className="text-muted">Subtotal</span>
+                    <span>${money(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Tax (13%)</span>
+                    <span>${money(tax)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Discount</span>
+                    <span>-${money(discountInput || 0)}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold" style={{ fontSize: "0.9375rem" }}>
+                    <span>Total</span>
+                    <span>${money(total)}</span>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {cardClientSecret && !cardPaymentSucceeded && (
+              <>
+                <div
+                  className="flex justify-between font-semibold"
+                  style={{ fontSize: "0.9375rem", paddingBottom: "1rem", borderBottom: "1px solid var(--border)", marginBottom: "1rem" }}
+                >
+                  <span>Amount due</span>
+                  <span>${money(total)}</span>
+                </div>
+                <StripePaymentForm
+                  clientSecret={cardClientSecret}
+                  amountLabel={`$${money(total)}`}
+                  onSuccess={handleCardPaymentClientSuccess}
+                  onCancel={closeInvoicePanel}
+                />
+              </>
             )}
 
             {cardPaymentSucceeded && (
-              <div className="panel-footer">
-                <button type="button" className="btn btn-primary" style={{ marginLeft: "auto" }} onClick={() => void handleFinalizeCardPayment()}>
-                  Confirm Payment
-                </button>
+              <div className="alert alert-success">
+                <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                <span>Payment successful. Click Confirm Payment to finish.</span>
               </div>
             )}
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
 
-      {refundModalInvoice && (
-        <div className="panel-overlay" onClick={() => setRefundModalInvoice(null)}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">Request Refund - {refundModalInvoice.invoiceNumber}</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={() => setRefundModalInvoice(null)} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleRequestRefund} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="refund-amount">
-                    Refund amount (max ${money(refundModalInvoice.totalAmount)})
-                  </label>
-                  <input
-                    id="refund-amount"
-                    type="number"
-                    min={0.01}
-                    max={Number(refundModalInvoice.totalAmount)}
-                    step="0.01"
-                    required
-                    value={refundAmount}
-                    onChange={(e) => setRefundAmount(e.target.value)}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="refund-reason">
-                    Reason
-                  </label>
-                  <input
-                    id="refund-reason"
-                    type="text"
-                    required
-                    value={refundReason}
-                    onChange={(e) => setRefundReason(e.target.value)}
-                    className="form-input"
-                  />
-                </div>
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
+      <Modal
+        isOpen={Boolean(refundModalInvoice)}
+        onClose={() => setRefundModalInvoice(null)}
+        title={refundModalInvoice ? `Request Refund - ${refundModalInvoice.invoiceNumber}` : "Request Refund"}
+        size="sm"
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setRefundModalInvoice(null)}>
+              Cancel
+            </button>
+            <button type="submit" form="refund-form" className="btn btn-primary" disabled={isRefunding}>
+              {isRefunding ? "Submitting..." : "Submit Refund Request"}
+            </button>
+          </>
+        }
+      >
+        {refundModalInvoice && (
+          <>
+            {actionError && (
+              <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+                <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                <span>{actionError}</span>
               </div>
-              <div className="panel-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setRefundModalInvoice(null)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isRefunding}>
-                  {isRefunding ? "Submitting..." : "Submit Refund Request"}
-                </button>
+            )}
+            <form id="refund-form" onSubmit={handleRequestRefund} style={{ display: "contents" }}>
+              <div className="form-group">
+                <label className="form-label" htmlFor="refund-amount">
+                  Refund amount (max ${money(refundModalInvoice.totalAmount)})
+                </label>
+                <input
+                  id="refund-amount"
+                  type="number"
+                  min={0.01}
+                  max={Number(refundModalInvoice.totalAmount)}
+                  step="0.01"
+                  required
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="refund-reason">
+                  Reason
+                </label>
+                <input
+                  id="refund-reason"
+                  type="text"
+                  required
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  className="form-input"
+                />
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
+          </>
+        )}
+      </Modal>
     </>
   );
 }

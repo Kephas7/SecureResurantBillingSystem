@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, AlertCircle, X, UtensilsCrossed } from "lucide-react";
+import { Plus, AlertCircle, UtensilsCrossed } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import { menuApi, type MenuCategory, type MenuItem } from "../../../lib/api";
 import { ImageUpload } from "../../../components/menu/ImageUpload";
+import Modal from "../../../components/ui/Modal";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -377,153 +378,147 @@ export default function MenuPage(): JSX.Element {
         </div>
       </div>
 
-      {showCategoryPanel && canManage && (
-        <div className="panel-overlay" onClick={resetCategoryForm}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">{editingCategoryId ? "Edit Category" : "Add Category"}</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={resetCategoryForm} aria-label="Close">
-                <X size={16} />
+      {canManage && (
+        <Modal
+          isOpen={showCategoryPanel}
+          onClose={resetCategoryForm}
+          title={editingCategoryId ? "Edit Category" : "Add Category"}
+          size="sm"
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={resetCategoryForm}>
+                Cancel
               </button>
+              <button type="submit" form="category-form" className="btn btn-primary" disabled={isSaving}>
+                {isSaving ? "Saving..." : editingCategoryId ? "Save" : "Create"}
+              </button>
+            </>
+          }
+        >
+          {actionError && (
+            <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+              <span>{actionError}</span>
             </div>
-            <form onSubmit={handleCategorySubmit} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="category-name">
-                    Name
-                  </label>
-                  <input
-                    id="category-name"
-                    required
-                    value={categoryForm.name}
-                    onChange={(e) => setCategoryForm({ name: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
-              </div>
-              <div className="panel-footer">
-                <button type="button" className="btn btn-secondary" onClick={resetCategoryForm}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                  {isSaving ? "Saving..." : editingCategoryId ? "Save" : "Create"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          )}
+          <form id="category-form" onSubmit={handleCategorySubmit} style={{ display: "contents" }}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="category-name">
+                Name
+              </label>
+              <input
+                id="category-name"
+                required
+                value={categoryForm.name}
+                onChange={(e) => setCategoryForm({ name: e.target.value })}
+                className="form-input"
+              />
+            </div>
+          </form>
+        </Modal>
       )}
 
-      {showItemPanel && canManage && (
-        <div className="panel-overlay" onClick={resetItemForm}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">{editingItemId ? "Edit Item" : "Add Item"}</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={resetItemForm} aria-label="Close">
-                <X size={16} />
+      {canManage && (
+        <Modal
+          isOpen={showItemPanel}
+          onClose={resetItemForm}
+          title={editingItemId ? "Edit Item" : "Add Item"}
+          size="lg"
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={resetItemForm}>
+                Cancel
               </button>
+              <button type="submit" form="item-form" className="btn btn-primary" disabled={isSaving}>
+                {isSaving ? "Saving..." : editingItemId ? "Save" : "Create"}
+              </button>
+            </>
+          }
+        >
+          {actionError && (
+            <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+              <span>{actionError}</span>
             </div>
-            <form onSubmit={handleItemSubmit} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <div className="form-group">
-                  <label className="form-label">Image</label>
-                  <ImageUpload
-                    currentImageUrl={itemForm.imageUrl}
-                    onUpload={(url) => setItemForm((prev) => ({ ...prev, imageUrl: url }))}
-                    onDelete={() => setItemForm((prev) => ({ ...prev, imageUrl: null }))}
-                    disabled={isSaving}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="item-name">
-                    Name
-                  </label>
-                  <input
-                    id="item-name"
-                    required
-                    value={itemForm.name}
-                    onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="item-description">
-                    Description
-                  </label>
-                  <input
-                    id="item-description"
-                    value={itemForm.description}
-                    onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="item-price">
-                    Price
-                  </label>
-                  <input
-                    id="item-price"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    required
-                    value={itemForm.price}
-                    onChange={(e) => setItemForm({ ...itemForm, price: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="item-category">
-                    Category
-                  </label>
-                  <select
-                    id="item-category"
-                    required
-                    value={itemForm.categoryId}
-                    onChange={(e) => setItemForm({ ...itemForm, categoryId: e.target.value })}
-                    className="form-select"
-                  >
-                    <option value="">Select a category</option>
-                    {categories?.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Available</label>
-                  <button
-                    type="button"
-                    className={`toggle${itemForm.isAvailable ? " toggle-on" : ""}`}
-                    onClick={() => setItemForm({ ...itemForm, isAvailable: !itemForm.isAvailable })}
-                    aria-label="Toggle availability"
-                  />
-                </div>
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
-              </div>
-              <div className="panel-footer">
-                <button type="button" className="btn btn-secondary" onClick={resetItemForm}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                  {isSaving ? "Saving..." : editingItemId ? "Save" : "Create"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          )}
+          <form id="item-form" onSubmit={handleItemSubmit} style={{ display: "contents" }}>
+            <div className="form-group">
+              <label className="form-label">Image</label>
+              <ImageUpload
+                currentImageUrl={itemForm.imageUrl}
+                onUpload={(url) => setItemForm((prev) => ({ ...prev, imageUrl: url }))}
+                onDelete={() => setItemForm((prev) => ({ ...prev, imageUrl: null }))}
+                disabled={isSaving}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="item-name">
+                Name
+              </label>
+              <input
+                id="item-name"
+                required
+                value={itemForm.name}
+                onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                className="form-input"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="item-description">
+                Description
+              </label>
+              <input
+                id="item-description"
+                value={itemForm.description}
+                onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })}
+                className="form-input"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="item-price">
+                Price
+              </label>
+              <input
+                id="item-price"
+                type="number"
+                min={0}
+                step="0.01"
+                required
+                value={itemForm.price}
+                onChange={(e) => setItemForm({ ...itemForm, price: e.target.value })}
+                className="form-input"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="item-category">
+                Category
+              </label>
+              <select
+                id="item-category"
+                required
+                value={itemForm.categoryId}
+                onChange={(e) => setItemForm({ ...itemForm, categoryId: e.target.value })}
+                className="form-select"
+              >
+                <option value="">Select a category</option>
+                {categories?.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Available</label>
+              <button
+                type="button"
+                className={`toggle${itemForm.isAvailable ? " toggle-on" : ""}`}
+                onClick={() => setItemForm({ ...itemForm, isAvailable: !itemForm.isAvailable })}
+                aria-label="Toggle availability"
+              />
+            </div>
+          </form>
+        </Modal>
       )}
     </>
   );

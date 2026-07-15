@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, ShieldCheck, Shield, AlertCircle, X } from "lucide-react";
+import { UserPlus, ShieldCheck, Shield, AlertCircle } from "lucide-react";
 import { useAuth } from "../../../../context/auth.context";
 import { usersApi, type AdminUser, type UpdateUserPayload } from "../../../../lib/api";
 import { roleBadgeClass } from "../../../../lib/roles";
 import { PasswordStrengthMeter } from "../../../../components/auth/PasswordStrengthMeter";
+import Modal from "../../../../components/ui/Modal";
 
 const ASSIGNABLE_ROLES = ["MANAGER", "CASHIER", "WAITER", "KITCHEN"];
 
@@ -275,168 +276,162 @@ export default function AdminUsersPage(): JSX.Element | null {
         </div>
       </div>
 
-      {showCreatePanel && (
-        <div className="panel-overlay" onClick={() => setShowCreatePanel(false)}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">Create New User</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={() => setShowCreatePanel(false)} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleCreate} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="new-email">
-                    Email
-                  </label>
-                  <input
-                    id="new-email"
-                    type="email"
-                    required
-                    value={createForm.email}
-                    onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="new-password">
-                    Password
-                  </label>
-                  <input
-                    id="new-password"
-                    type="password"
-                    required
-                    value={createForm.password}
-                    onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
-                    className="form-input"
-                  />
-                  <PasswordStrengthMeter password={createForm.password} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="new-fullname">
-                    Full Name
-                  </label>
-                  <input
-                    id="new-fullname"
-                    type="text"
-                    required
-                    value={createForm.fullName}
-                    onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="new-role">
-                    Role
-                  </label>
-                  <select
-                    id="new-role"
-                    value={createForm.roleName}
-                    onChange={(e) => setCreateForm({ ...createForm, roleName: e.target.value })}
-                    className="form-select"
-                  >
-                    {ASSIGNABLE_ROLES.map((role) => (
-                      <option key={role} value={role}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
-              </div>
-              <div className="panel-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowCreatePanel(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isCreating}>
-                  {isCreating ? "Creating..." : "Create"}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showCreatePanel}
+        onClose={() => setShowCreatePanel(false)}
+        title="Create New User"
+        size="md"
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setShowCreatePanel(false)}>
+              Cancel
+            </button>
+            <button type="submit" form="create-user-form" className="btn btn-primary" disabled={isCreating}>
+              {isCreating ? "Creating..." : "Create"}
+            </button>
+          </>
+        }
+      >
+        {actionError && (
+          <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+            <span>{actionError}</span>
           </div>
-        </div>
-      )}
+        )}
+        <form id="create-user-form" onSubmit={handleCreate} style={{ display: "contents" }}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="new-email">
+              Email
+            </label>
+            <input
+              id="new-email"
+              type="email"
+              required
+              value={createForm.email}
+              onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+              className="form-input"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="new-password">
+              Password
+            </label>
+            <input
+              id="new-password"
+              type="password"
+              required
+              value={createForm.password}
+              onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+              className="form-input"
+            />
+            <PasswordStrengthMeter password={createForm.password} />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="new-fullname">
+              Full Name
+            </label>
+            <input
+              id="new-fullname"
+              type="text"
+              required
+              value={createForm.fullName}
+              onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })}
+              className="form-input"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="new-role">
+              Role
+            </label>
+            <select
+              id="new-role"
+              value={createForm.roleName}
+              onChange={(e) => setCreateForm({ ...createForm, roleName: e.target.value })}
+              className="form-select"
+            >
+              {ASSIGNABLE_ROLES.map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+          </div>
+        </form>
+      </Modal>
 
-      {editingUser && (
-        <div className="panel-overlay" onClick={() => setEditingUser(null)}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">Edit User</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={() => setEditingUser(null)} aria-label="Close">
-                <X size={16} />
-              </button>
+      <Modal
+        isOpen={Boolean(editingUser)}
+        onClose={() => setEditingUser(null)}
+        title="Edit User"
+        size="md"
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setEditingUser(null)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-primary" disabled={isSaving} onClick={() => void handleSaveEdit()}>
+              {isSaving ? "Saving..." : "Save"}
+            </button>
+          </>
+        }
+      >
+        {editingUser && (
+          <>
+            {actionError && (
+              <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+                <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                <span>{actionError}</span>
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input type="email" value={editingUser.email} disabled className="form-input" />
             </div>
-            <div className="panel-body">
-              <div className="form-group">
-                <label className="form-label">Email</label>
-                <input type="email" value={editingUser.email} disabled className="form-input" />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="edit-fullname">
-                  Full Name
-                </label>
-                <input
-                  id="edit-fullname"
-                  value={editForm.fullName ?? ""}
-                  onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
-                  className="form-input"
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="edit-role">
-                  Role
-                </label>
-                <select
-                  id="edit-role"
-                  value={editForm.roleName ?? editingUser.role}
-                  onChange={(e) => setEditForm({ ...editForm, roleName: e.target.value })}
-                  className="form-select"
-                >
-                  {ASSIGNABLE_ROLES.map((role) => (
-                    <option key={role} value={role}>
-                      {role}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="edit-status">
-                  Status
-                </label>
-                <select
-                  id="edit-status"
-                  value={String(editForm.isActive ?? editingUser.isActive)}
-                  onChange={(e) => setEditForm({ ...editForm, isActive: e.target.value === "true" })}
-                  className="form-select"
-                >
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </select>
-              </div>
-              {actionError && (
-                <div className="alert alert-danger">
-                  <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                  <span>{actionError}</span>
-                </div>
-              )}
+            <div className="form-group">
+              <label className="form-label" htmlFor="edit-fullname">
+                Full Name
+              </label>
+              <input
+                id="edit-fullname"
+                value={editForm.fullName ?? ""}
+                onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                className="form-input"
+              />
             </div>
-            <div className="panel-footer">
-              <button type="button" className="btn btn-secondary" onClick={() => setEditingUser(null)}>
-                Cancel
-              </button>
-              <button type="button" className="btn btn-primary" disabled={isSaving} onClick={() => void handleSaveEdit()}>
-                {isSaving ? "Saving..." : "Save"}
-              </button>
+            <div className="form-group">
+              <label className="form-label" htmlFor="edit-role">
+                Role
+              </label>
+              <select
+                id="edit-role"
+                value={editForm.roleName ?? editingUser.role}
+                onChange={(e) => setEditForm({ ...editForm, roleName: e.target.value })}
+                className="form-select"
+              >
+                {ASSIGNABLE_ROLES.map((role) => (
+                  <option key={role} value={role}>
+                    {role}
+                  </option>
+                ))}
+              </select>
             </div>
-          </div>
-        </div>
-      )}
+            <div className="form-group">
+              <label className="form-label" htmlFor="edit-status">
+                Status
+              </label>
+              <select
+                id="edit-status"
+                value={String(editForm.isActive ?? editingUser.isActive)}
+                onChange={(e) => setEditForm({ ...editForm, isActive: e.target.value === "true" })}
+                className="form-select"
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
+          </>
+        )}
+      </Modal>
     </>
   );
 }

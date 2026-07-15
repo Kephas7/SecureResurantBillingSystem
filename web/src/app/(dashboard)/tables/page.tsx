@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Users as UsersIcon, AlertCircle, X } from "lucide-react";
+import { Plus, Users as UsersIcon, AlertCircle } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import { tablesApi, type RestaurantTable, type TableStatus } from "../../../lib/api";
+import Modal from "../../../components/ui/Modal";
 
 const STATUS_BADGE_CLASS: Record<TableStatus, string> = {
   AVAILABLE: "badge-green",
@@ -198,64 +199,61 @@ export default function TablesPage(): JSX.Element | null {
         )}
       </div>
 
-      {showPanel && canManage && (
-        <div className="panel-overlay" onClick={resetForm}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">{editingId ? "Edit Table" : "Add Table"}</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={resetForm} aria-label="Close">
-                <X size={16} />
+      {canManage && (
+        <Modal
+          isOpen={showPanel}
+          onClose={resetForm}
+          title={editingId ? "Edit Table" : "Add Table"}
+          size="sm"
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={resetForm}>
+                Cancel
               </button>
+              <button type="submit" form="table-form" className="btn btn-primary" disabled={isSaving}>
+                {isSaving ? "Saving..." : editingId ? "Save" : "Create"}
+              </button>
+            </>
+          }
+        >
+          {actionError && (
+            <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+              <span>{actionError}</span>
             </div>
-            <form onSubmit={handleSubmit} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="table-number">
-                    Table number
-                  </label>
-                  <input
-                    id="table-number"
-                    type="number"
-                    min={1}
-                    required
-                    value={form.number}
-                    onChange={(e) => setForm({ ...form, number: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="table-capacity">
-                    Capacity
-                  </label>
-                  <input
-                    id="table-capacity"
-                    type="number"
-                    min={1}
-                    max={20}
-                    required
-                    value={form.capacity}
-                    onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
-              </div>
-              <div className="panel-footer">
-                <button type="button" className="btn btn-secondary" onClick={resetForm}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                  {isSaving ? "Saving..." : editingId ? "Save" : "Create"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          )}
+          <form id="table-form" onSubmit={handleSubmit} style={{ display: "contents" }}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="table-number">
+                Table number
+              </label>
+              <input
+                id="table-number"
+                type="number"
+                min={1}
+                required
+                value={form.number}
+                onChange={(e) => setForm({ ...form, number: e.target.value })}
+                className="form-input"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="table-capacity">
+                Capacity
+              </label>
+              <input
+                id="table-capacity"
+                type="number"
+                min={1}
+                max={20}
+                required
+                value={form.capacity}
+                onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                className="form-input"
+              />
+            </div>
+          </form>
+        </Modal>
       )}
     </>
   );

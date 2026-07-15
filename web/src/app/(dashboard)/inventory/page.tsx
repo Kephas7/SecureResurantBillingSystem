@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, AlertCircle, X, AlertTriangle } from "lucide-react";
+import { Plus, AlertCircle, AlertTriangle } from "lucide-react";
 import { useAuth } from "../../../context/auth.context";
 import {
   inventoryApi,
@@ -11,6 +11,7 @@ import {
   type CreateIngredientPayload,
   type CreateSupplierPayload,
 } from "../../../lib/api";
+import Modal from "../../../components/ui/Modal";
 
 const EMPTY_INGREDIENT_FORM: CreateIngredientPayload = {
   name: "",
@@ -338,223 +339,212 @@ export default function InventoryPage(): JSX.Element | null {
         </div>
       </div>
 
-      {showIngredientPanel && (
-        <div className="panel-overlay" onClick={resetIngredientForm}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">{editingIngredientId ? "Edit Ingredient" : "Add Ingredient"}</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={resetIngredientForm} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleIngredientSubmit} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="ing-name">
-                    Name
-                  </label>
-                  <input
-                    id="ing-name"
-                    required
-                    value={ingredientForm.name}
-                    onChange={(e) => setIngredientForm({ ...ingredientForm, name: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="ing-unit">
-                    Unit
-                  </label>
-                  <input
-                    id="ing-unit"
-                    required
-                    placeholder="kg, litre, unit..."
-                    value={ingredientForm.unit}
-                    onChange={(e) => setIngredientForm({ ...ingredientForm, unit: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="ing-stock">
-                    Stock quantity
-                  </label>
-                  <input
-                    id="ing-stock"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    required
-                    value={ingredientForm.stockQuantity}
-                    onChange={(e) => setIngredientForm({ ...ingredientForm, stockQuantity: Number(e.target.value) })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="ing-threshold">
-                    Low stock threshold
-                  </label>
-                  <input
-                    id="ing-threshold"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    required
-                    value={ingredientForm.lowStockThreshold}
-                    onChange={(e) => setIngredientForm({ ...ingredientForm, lowStockThreshold: Number(e.target.value) })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="ing-supplier">
-                    Supplier
-                  </label>
-                  <select
-                    id="ing-supplier"
-                    value={ingredientForm.supplierId ?? ""}
-                    onChange={(e) => setIngredientForm({ ...ingredientForm, supplierId: e.target.value || undefined })}
-                    className="form-select"
-                  >
-                    <option value="">No supplier</option>
-                    {suppliers?.map((supplier) => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
-              </div>
-              <div className="panel-footer">
-                <button type="button" className="btn btn-secondary" onClick={resetIngredientForm}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                  {isSaving ? "Saving..." : editingIngredientId ? "Save" : "Create"}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showIngredientPanel}
+        onClose={resetIngredientForm}
+        title={editingIngredientId ? "Edit Ingredient" : "Add Ingredient"}
+        size="md"
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={resetIngredientForm}>
+              Cancel
+            </button>
+            <button type="submit" form="ingredient-form" className="btn btn-primary" disabled={isSaving}>
+              {isSaving ? "Saving..." : editingIngredientId ? "Save" : "Create"}
+            </button>
+          </>
+        }
+      >
+        {actionError && (
+          <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+            <span>{actionError}</span>
           </div>
-        </div>
-      )}
+        )}
+        <form id="ingredient-form" onSubmit={handleIngredientSubmit} style={{ display: "contents" }}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="ing-name">
+              Name
+            </label>
+            <input
+              id="ing-name"
+              required
+              value={ingredientForm.name}
+              onChange={(e) => setIngredientForm({ ...ingredientForm, name: e.target.value })}
+              className="form-input"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="ing-unit">
+              Unit
+            </label>
+            <input
+              id="ing-unit"
+              required
+              placeholder="kg, litre, unit..."
+              value={ingredientForm.unit}
+              onChange={(e) => setIngredientForm({ ...ingredientForm, unit: e.target.value })}
+              className="form-input"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="ing-stock">
+              Stock quantity
+            </label>
+            <input
+              id="ing-stock"
+              type="number"
+              min={0}
+              step="0.01"
+              required
+              value={ingredientForm.stockQuantity}
+              onChange={(e) => setIngredientForm({ ...ingredientForm, stockQuantity: Number(e.target.value) })}
+              className="form-input"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="ing-threshold">
+              Low stock threshold
+            </label>
+            <input
+              id="ing-threshold"
+              type="number"
+              min={0}
+              step="0.01"
+              required
+              value={ingredientForm.lowStockThreshold}
+              onChange={(e) => setIngredientForm({ ...ingredientForm, lowStockThreshold: Number(e.target.value) })}
+              className="form-input"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="ing-supplier">
+              Supplier
+            </label>
+            <select
+              id="ing-supplier"
+              value={ingredientForm.supplierId ?? ""}
+              onChange={(e) => setIngredientForm({ ...ingredientForm, supplierId: e.target.value || undefined })}
+              className="form-select"
+            >
+              <option value="">No supplier</option>
+              {suppliers?.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </form>
+      </Modal>
 
-      {adjustingIngredient && (
-        <div className="panel-overlay" onClick={() => setAdjustingIngredient(null)}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">Adjust Stock - {adjustingIngredient.name}</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={() => setAdjustingIngredient(null)} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleAdjustSubmit} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <p className="text-muted text-sm">
-                  Current stock: {adjustingIngredient.stockQuantity} {adjustingIngredient.unit}
-                </p>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="adjustment">
-                    Adjustment (+/-)
-                  </label>
-                  <input
-                    id="adjustment"
-                    type="number"
-                    step="0.01"
-                    required
-                    value={adjustment}
-                    onChange={(e) => setAdjustment(e.target.value)}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="adjust-reason">
-                    Reason
-                  </label>
-                  <input
-                    id="adjust-reason"
-                    required
-                    value={adjustReason}
-                    onChange={(e) => setAdjustReason(e.target.value)}
-                    className="form-input"
-                  />
-                </div>
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
+      <Modal
+        isOpen={Boolean(adjustingIngredient)}
+        onClose={() => setAdjustingIngredient(null)}
+        title={adjustingIngredient ? `Adjust Stock - ${adjustingIngredient.name}` : "Adjust Stock"}
+        size="sm"
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setAdjustingIngredient(null)}>
+              Cancel
+            </button>
+            <button type="submit" form="adjust-stock-form" className="btn btn-primary" disabled={isSaving}>
+              {isSaving ? "Saving..." : "Apply"}
+            </button>
+          </>
+        }
+      >
+        {adjustingIngredient && (
+          <>
+            {actionError && (
+              <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+                <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+                <span>{actionError}</span>
               </div>
-              <div className="panel-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setAdjustingIngredient(null)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                  {isSaving ? "Saving..." : "Apply"}
-                </button>
+            )}
+            <p className="text-muted text-sm" style={{ margin: 0 }}>
+              Current stock: {adjustingIngredient.stockQuantity} {adjustingIngredient.unit}
+            </p>
+            <form id="adjust-stock-form" onSubmit={handleAdjustSubmit} style={{ display: "contents" }}>
+              <div className="form-group">
+                <label className="form-label" htmlFor="adjustment">
+                  Adjustment (+/-)
+                </label>
+                <input
+                  id="adjustment"
+                  type="number"
+                  step="0.01"
+                  required
+                  value={adjustment}
+                  onChange={(e) => setAdjustment(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="adjust-reason">
+                  Reason
+                </label>
+                <input
+                  id="adjust-reason"
+                  required
+                  value={adjustReason}
+                  onChange={(e) => setAdjustReason(e.target.value)}
+                  className="form-input"
+                />
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
 
-      {showSupplierPanel && (
-        <div className="panel-overlay" onClick={resetSupplierForm}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <h3 className="panel-title">{editingSupplierId ? "Edit Supplier" : "Add Supplier"}</h3>
-              <button type="button" className="btn btn-icon btn-secondary" onClick={resetSupplierForm} aria-label="Close">
-                <X size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleSupplierSubmit} style={{ display: "contents" }}>
-              <div className="panel-body">
-                <div className="form-group">
-                  <label className="form-label" htmlFor="sup-name">
-                    Name
-                  </label>
-                  <input
-                    id="sup-name"
-                    required
-                    value={supplierForm.name}
-                    onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="sup-contact">
-                    Contact info
-                  </label>
-                  <input
-                    id="sup-contact"
-                    value={supplierForm.contactInfo}
-                    onChange={(e) => setSupplierForm({ ...supplierForm, contactInfo: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-                {actionError && (
-                  <div className="alert alert-danger">
-                    <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
-                    <span>{actionError}</span>
-                  </div>
-                )}
-              </div>
-              <div className="panel-footer">
-                <button type="button" className="btn btn-secondary" onClick={resetSupplierForm}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isSaving}>
-                  {isSaving ? "Saving..." : editingSupplierId ? "Save" : "Create"}
-                </button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showSupplierPanel}
+        onClose={resetSupplierForm}
+        title={editingSupplierId ? "Edit Supplier" : "Add Supplier"}
+        size="sm"
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={resetSupplierForm}>
+              Cancel
+            </button>
+            <button type="submit" form="supplier-form" className="btn btn-primary" disabled={isSaving}>
+              {isSaving ? "Saving..." : editingSupplierId ? "Save" : "Create"}
+            </button>
+          </>
+        }
+      >
+        {actionError && (
+          <div className="alert alert-danger" style={{ marginBottom: 0 }}>
+            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: "0.125rem" }} />
+            <span>{actionError}</span>
           </div>
-        </div>
-      )}
+        )}
+        <form id="supplier-form" onSubmit={handleSupplierSubmit} style={{ display: "contents" }}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="sup-name">
+              Name
+            </label>
+            <input
+              id="sup-name"
+              required
+              value={supplierForm.name}
+              onChange={(e) => setSupplierForm({ ...supplierForm, name: e.target.value })}
+              className="form-input"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label" htmlFor="sup-contact">
+              Contact info
+            </label>
+            <input
+              id="sup-contact"
+              value={supplierForm.contactInfo}
+              onChange={(e) => setSupplierForm({ ...supplierForm, contactInfo: e.target.value })}
+              className="form-input"
+            />
+          </div>
+        </form>
+      </Modal>
     </>
   );
 }
