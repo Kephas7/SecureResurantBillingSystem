@@ -16,10 +16,14 @@ function calculateScore(password: string): number {
 // guide users toward stronger passwords without enforcing rules they find
 // confusing. The actual enforcement happens server-side in the DTO -
 // this meter can be fully bypassed and must never be treated as validation.
-export function PasswordStrengthMeter({ password }: { password: string }): JSX.Element {
+export function PasswordStrengthMeter({ password }: { password: string }): JSX.Element | null {
+  if (password.length === 0) {
+    return null;
+  }
+
   const score = calculateScore(password);
   const colour = COLOURS[score];
-  const label = password.length === 0 ? "" : LABELS[score];
+  const label = LABELS[score];
 
   return (
     <div style={{ marginTop: "0.5rem" }}>
@@ -37,9 +41,7 @@ export function PasswordStrengthMeter({ password }: { password: string }): JSX.E
           />
         ))}
       </div>
-      {label && (
-        <span style={{ fontSize: "0.75rem", color: colour }}>{label}</span>
-      )}
+      <span style={{ fontSize: "0.75rem", color: colour }}>{label}</span>
     </div>
   );
 }

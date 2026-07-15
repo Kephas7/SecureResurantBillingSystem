@@ -6,6 +6,7 @@ import { UserPlus, ShieldCheck, Shield, AlertCircle, X } from "lucide-react";
 import { useAuth } from "../../../../context/auth.context";
 import { usersApi, type AdminUser, type UpdateUserPayload } from "../../../../lib/api";
 import { roleBadgeClass } from "../../../../lib/roles";
+import { PasswordStrengthMeter } from "../../../../components/auth/PasswordStrengthMeter";
 
 const ASSIGNABLE_ROLES = ["MANAGER", "CASHIER", "WAITER", "KITCHEN"];
 
@@ -310,6 +311,7 @@ export default function AdminUsersPage(): JSX.Element | null {
                     onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
                     className="form-input"
                   />
+                  <PasswordStrengthMeter password={createForm.password} />
                 </div>
                 <div className="form-group">
                   <label className="form-label" htmlFor="new-fullname">
