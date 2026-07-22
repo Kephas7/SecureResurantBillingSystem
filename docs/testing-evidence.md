@@ -121,6 +121,31 @@ non-existent account, 3 runs:                 0.0440s, 0.0361s, 0.0370s
 
 **Related finding:** A genuine timing side-channel *was* found and fixed on the separate password-reset endpoint (`POST /auth/request-password-reset`), where the real-email branch took roughly 2x as long as the non-existent-email branch pre-fix (~10ms vs ~4.5ms) because only the real-email path performed a database write. This is tracked as **FINDING-004** in `docs/pentest/findings.md`, remediated by padding both branches to a fixed 500ms floor (post-fix: both branches land within a ~20ms band of each other).
 
+### 1.8 Rate limiting (Throttler configuration)
+
+**Pre-existing gap, identified during IP-blocking testing:** `ThrottlerModule.forRoot` registered its limiter under the name `'global'`, but every per-route `@Throttle({ default: {...} })` decorator (login, change-password, request-password-reset, reset-password, MFA setup/verify, upload) references a limiter named `'default'`. Since no limiter named `'default'` existed, those overrides silently no-op'd, and only the blanket 100/min global limit was ever enforced — the tighter, endpoint-specific limits (e.g. 10/min on login, 5/min on change-password) never actually applied. This was discovered while load-testing the new IP-blocking feature: 15 rapid login requests from one IP produced zero `429`s, when the intended per-route limit should have tripped at request 11.
+
+**Fix:** Renamed the registered limiter from `'global'` to `'default'` in `app.module.ts` (Option A from the two documented fixes — a single-line change that makes every existing `@Throttle({ default: {...} })` decorator bind correctly, versus rewriting every decorator call site to reference `'global'` instead).
+
+**Test:** Send rapid consecutive requests and confirm each route's *own* configured limit now trips, not just the shared 100/min ceiling.
+
+```
+POST /auth/login (limit 10/60s), 11 rapid requests, same IP:
+  attempt 1-5:  401 Invalid email or password
+  attempt 6-10: 401 Invalid credentials or account temporarily locked...
+  attempt 11:   429 ThrottlerException: Too Many Requests
+
+GET /tables (no route override -> global 100/60s), 101 rapid requests, same session:
+  attempt 100: 200
+  attempt 101: 429 ThrottlerException: Too Many Requests
+
+POST /auth/change-password (limit 5/60s), 6 rapid requests, same session:
+  attempt 1-5: 400 (validation failure, but request accepted - guards run before the ValidationPipe)
+  attempt 6:   429 ThrottlerException: Too Many Requests
+```
+
+**Result: PASS (all three).** Each route now enforces its own configured limit independently — confirming that named limiters in `@nestjs/throttler` are tracked per (route, IP), not merged just because they share a limiter name. The login-triggered account lockout (waiter, from the first test) was cleared via `POST /users/:id/unlock` afterward to restore clean state.
+
 ---
 
 ## 2. Role-Based Access Control

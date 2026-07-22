@@ -39,9 +39,15 @@ import { RolesGuard } from "./common/guards/roles.guard";
     //   instances' worth of attempts by hitting different instances.
     //   The in-memory store is appropriate for the single-instance
     //   deployment this coursework targets.
+    // IMPORTANT: The limiter name here must match the name
+    // used in @Throttle() decorators on individual routes.
+    // Using 'default' allows per-route overrides via
+    // @Throttle({ default: { ttl, limit } }) syntax.
+    // A mismatch causes per-route limits to silently no-op,
+    // falling back to the global limit only.
     ThrottlerModule.forRoot([
       {
-        name: 'global',
+        name: 'default',
         ttl: 60000,
         limit: 100,
       },
