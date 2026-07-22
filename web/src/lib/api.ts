@@ -40,6 +40,8 @@ interface MeResponse {
   fullName: string;
   role: string;
   mfaEnabled: boolean;
+  passwordExpired: boolean;
+  passwordChangedAt: string;
 }
 
 interface LoginResponse {

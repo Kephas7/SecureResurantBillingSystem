@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { authApi } from "../lib/api";
 
 // Extends the plan's minimal { id, email, role } shape with fullName -
@@ -11,6 +12,8 @@ export interface User {
   email: string;
   fullName: string;
   role: string;
+  passwordExpired: boolean;
+  passwordChangedAt: string;
 }
 
 interface AuthContextValue {
@@ -28,7 +31,27 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 // nothing useful to restore and calling it would just add noise.
 const SKIP_ME_CHECK_PATHS = ["/login", "/mfa-verify", "/forgot-password", "/reset-password"];
 
+function toUser(me: {
+  id: string;
+  email: string;
+  fullName: string;
+  role: string;
+  passwordExpired: boolean;
+  passwordChangedAt: string;
+}): User {
+  return {
+    id: me.id,
+    email: me.email,
+    fullName: me.fullName,
+    role: me.role,
+    passwordExpired: me.passwordExpired,
+    passwordChangedAt: me.passwordChangedAt,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }): JSX.Element {
+  const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -42,10 +65,20 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     // so on every page load we ask the API who (if anyone) it is for.
     authApi
       .me()
-      .then((me) => setUser({ id: me.id, email: me.email, fullName: me.fullName, role: me.role }))
+      .then((me) => setUser(toUser(me)))
       .catch(() => setUser(null))
       .finally(() => setIsLoading(false));
   }, []);
+
+  // Centralised password-expiry gate: wherever `user` gets set (initial
+  // load, login, MFA verification), redirect to the forced-change screen
+  // if the password is expired. Kept here rather than duplicated at each
+  // setUser call site so a new caller can't forget the check.
+  useEffect(() => {
+    if (user?.passwordExpired && pathname !== "/password-expired") {
+      router.replace("/password-expired");
+    }
+  }, [user, pathname, router]);
 
   async function login(
     email: string,
@@ -56,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
 
     if (!result.requiresMfa) {
       const me = await authApi.me();
-      setUser({ id: me.id, email: me.email, fullName: me.fullName, role: me.role });
+      setUser(toUser(me));
     }
 
     return { requiresMfa: result.requiresMfa };

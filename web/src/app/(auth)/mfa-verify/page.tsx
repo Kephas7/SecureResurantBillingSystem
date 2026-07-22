@@ -35,8 +35,15 @@ export default function MfaVerifyPage(): JSX.Element {
     try {
       await authApi.verifyMfa(token);
       const me = await authApi.me();
-      setUser({ id: me.id, email: me.email, fullName: me.fullName, role: me.role });
-      router.push("/dashboard");
+      setUser({
+        id: me.id,
+        email: me.email,
+        fullName: me.fullName,
+        role: me.role,
+        passwordExpired: me.passwordExpired,
+        passwordChangedAt: me.passwordChangedAt,
+      });
+      router.push(me.passwordExpired ? "/password-expired" : "/dashboard");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Verification failed";
       setCode("");

@@ -27,8 +27,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (isLoading) return;
+
+    if (!user) {
       router.push("/login");
+      return;
+    }
+
+    if (user.passwordExpired) {
+      router.replace("/password-expired");
+      return;
     }
   }, [isLoading, user, router]);
 
@@ -51,7 +59,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.push("/login");
   }
 
-  if (isLoading || !user) {
+  if (isLoading || !user || user.passwordExpired) {
     return null;
   }
 

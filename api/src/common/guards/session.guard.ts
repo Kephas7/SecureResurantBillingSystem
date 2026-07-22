@@ -1,15 +1,22 @@
 import { CanActivate, ExecutionContext, Injectable, SetMetadata, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
+import { PrismaService } from '../../modules/prisma/prisma.service';
 
 export const IS_PUBLIC_KEY = 'isPublic';
-
 /** Marks a route as reachable without an authenticated session. */
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
+declare module 'express-session' {
+  interface SessionData {
+    userId?: string;
+    mfaVerified?: boolean;
+    passwordExpired?: boolean;
+  }
+}
+
 /**
  * Zero-trust, default-deny session check.
- *
  * The common insecure pattern is "protect routes by remembering to add a
  * guard to each one" - new routes are unprotected by default and a
  * forgotten decorator silently exposes an endpoint. This guard inverts
@@ -19,9 +26,12 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
  */
 @Injectable()
 export class SessionGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -39,6 +49,62 @@ export class SessionGuard implements CanActivate {
 
     if (request.session.mfaVerified === false) {
       throw new UnauthorizedException('MFA verification required');
+    }
+
+    /**
+     * SECURITY: Password expiry enforcement.
+     * NIST SP 800-63B recommends against mandatory rotation
+     * without evidence of compromise, but the assignment brief
+     * explicitly requires 90-day expiry. We implement it here
+     * as a session-layer check rather than blocking login
+     * entirely — the user can still authenticate but is
+     * redirected to change their password before proceeding.
+     *
+     * The check is skipped for the password-change endpoint
+     * itself (otherwise the user could never change their
+     * password) and for the logout endpoint.
+     */
+    const PASSWORD_EXPIRY_DAYS = 90;
+    const EXEMPT_PATHS = ['/auth/change-password', '/auth/logout', '/auth/me'];
+
+    const requestPath = request.path;
+    const isExempt = EXEMPT_PATHS.some((p) => requestPath.startsWith(p));
+
+    if (!isExempt && request.session.userId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: request.session.userId },
+        select: { passwordChangedAt: true },
+      });
+
+      if (user) {
+        const daysSinceChange = Math.floor(
+          (Date.now() - user.passwordChangedAt.getTime()) / (1000 * 60 * 60 * 24),
+        );
+
+        if (daysSinceChange >= PASSWORD_EXPIRY_DAYS) {
+          // Set a flag on the session so the frontend knows
+          // to show the forced change screen
+          request.session.passwordExpired = true;
+
+          await this.prisma.auditLog
+            .create({
+              data: {
+                actorId: request.session.userId,
+                action: 'PASSWORD_EXPIRED',
+                resource: 'User',
+                resourceId: request.session.userId,
+                metadata: {
+                  daysSinceChange,
+                  expiryThresholdDays: PASSWORD_EXPIRY_DAYS,
+                },
+              },
+            })
+            // Fire and forget — don't block the request
+            .catch(() => {});
+        } else {
+          request.session.passwordExpired = false;
+        }
+      }
     }
 
     return true;

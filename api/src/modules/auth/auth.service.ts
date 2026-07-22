@@ -35,6 +35,10 @@ const PASSWORD_HISTORY_LIMIT = 5;
 // it stays correct across environments/reseeds.
 const DEFAULT_ROLE_NAME = 'WAITER';
 
+// Mirrors the value enforced in SessionGuard - a password not changed
+// within this window is flagged so the frontend can force a change.
+const PASSWORD_EXPIRY_DAYS = 90;
+
 // A syntactically-valid argon2id hash with no corresponding real password.
 // Used to burn CPU time on unknown-email login attempts so that the
 // response timing for "no such user" matches "wrong password" - otherwise
@@ -48,6 +52,8 @@ export interface SafeUser {
   fullName: string;
   role: string;
   mfaEnabled: boolean;
+  passwordExpired: boolean;
+  passwordChangedAt: Date;
   createdAt: Date;
 }
 
@@ -188,12 +194,25 @@ export class AuthService {
   async getMe(userId: string): Promise<SafeUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, fullName: true, mfaEnabled: true, createdAt: true, role: { select: { name: true } } },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        mfaEnabled: true,
+        passwordChangedAt: true,
+        createdAt: true,
+        role: { select: { name: true } },
+      },
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
+
+    const daysSinceChange = Math.floor(
+      (Date.now() - user.passwordChangedAt.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    const passwordExpired = daysSinceChange >= PASSWORD_EXPIRY_DAYS;
 
     // Only ever return fields safe to hand to the browser - never
     // passwordHash, passwordHistory, or mfaSecretEnc.
@@ -203,6 +222,8 @@ export class AuthService {
       fullName: user.fullName,
       role: user.role.name,
       mfaEnabled: user.mfaEnabled,
+      passwordExpired,
+      passwordChangedAt: user.passwordChangedAt,
       createdAt: user.createdAt,
     };
   }
