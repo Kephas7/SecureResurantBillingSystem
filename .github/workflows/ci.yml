@@ -110,9 +110,40 @@ jobs:
           fi
           echo ".env not committed — OK"
 
+  # SAST: Static Application Security Testing using Semgrep.
+  # Scans source code for security vulnerabilities without
+  # executing it. Covers OWASP Top 10 patterns, hardcoded
+  # secrets, and Node.js/TypeScript-specific security issues.
+  # (OWASP A08:2021 - Software and Data Integrity Failures)
+  sast:
+    name: SAST — Semgrep
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Semgrep SAST scan
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/nodejs
+            p/typescript
+            p/owasp-top-ten
+            p/jwt
+            p/secrets
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+        continue-on-error: true
+        # continue-on-error: true because Semgrep requires a
+        # registered token for full rule access. The scan still
+        # runs and produces output without a token — findings
+        # are reported but the pipeline does not block.
+        # In production this would be set to false once a
+        # Semgrep account is configured.
+
   all-checks:
     name: All security checks passed
     runs-on: ubuntu-latest
-    needs: [api, web, docker-build, security-checks]
+    needs: [api, web, docker-build, security-checks, sast]
     steps:
       - run: echo "All checks passed"
