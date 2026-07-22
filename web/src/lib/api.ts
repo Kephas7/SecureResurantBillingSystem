@@ -19,17 +19,52 @@ const GENERIC_ERROR_MESSAGE = "Something went wrong. Please try again.";
 // flows they exist for.
 const PUBLIC_PATHS = ["/login", "/mfa-verify", "/forgot-password", "/reset-password"];
 
+// SessionGuard (api/src/common/guards/session.guard.ts) enforces password
+// expiry server-side by throwing a 403 whose message body is this JSON
+// shape, rather than a plain string - GlobalExceptionFilter passes an
+// HttpException's message through unmodified, so it arrives here still
+// JSON-encoded and must be parsed back out.
+interface StructuredErrorBody {
+  code: string;
+  message: string;
+}
+
+function parseStructuredError(message: string | undefined): StructuredErrorBody | null {
+  if (!message) return null;
+  try {
+    const parsed: unknown = JSON.parse(message);
+    if (parsed && typeof parsed === "object" && "code" in parsed && "message" in parsed) {
+      return parsed as StructuredErrorBody;
+    }
+  } catch {
+    // Not a structured error - a normal string message, handled below.
+  }
+  return null;
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ message?: string }>) => {
     const isPublicPath =
       typeof window !== "undefined" && PUBLIC_PATHS.includes(window.location.pathname);
 
+    const structured = parseStructuredError(error.response?.data?.message);
+
+    if (
+      error.response?.status === 403 &&
+      structured?.code === "PASSWORD_EXPIRED" &&
+      typeof window !== "undefined" &&
+      window.location.pathname !== "/password-expired"
+    ) {
+      window.location.href = "/password-expired";
+      return Promise.reject(new Error(structured.message));
+    }
+
     if (error.response?.status === 401 && !isPublicPath) {
       window.location.href = "/login";
     }
 
-    const message = error.response?.data?.message ?? GENERIC_ERROR_MESSAGE;
+    const message = structured?.message ?? error.response?.data?.message ?? GENERIC_ERROR_MESSAGE;
     return Promise.reject(new Error(message));
   },
 );

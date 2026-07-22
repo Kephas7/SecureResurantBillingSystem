@@ -1,4 +1,11 @@
-import { CanActivate, ExecutionContext, Injectable, SetMetadata, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  SetMetadata,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { PrismaService } from '../../modules/prisma/prisma.service';
@@ -101,6 +108,21 @@ export class SessionGuard implements CanActivate {
             })
             // Fire and forget — don't block the request
             .catch(() => {});
+
+          // SECURITY FIX: enforce expiry at the API layer.
+          // Previously this only set a session flag and relied on
+          // the frontend to redirect — a direct API call would
+          // bypass enforcement entirely, contradicting the
+          // zero-trust default-deny design of this guard.
+          // Throwing here ensures expired passwords are enforced
+          // regardless of client behaviour.
+          // (NIST SP 800-63B — reauthentication requirements)
+          throw new ForbiddenException(
+            JSON.stringify({
+              code: 'PASSWORD_EXPIRED',
+              message: 'Your password has expired. Please change it to continue.',
+            }),
+          );
         } else {
           request.session.passwordExpired = false;
         }

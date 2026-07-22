@@ -57,6 +57,7 @@ acknowledged and deliberately not fully closed, with justification below).
 | API responses | Tampering / XSS | A reflected or stored script executes in a victim's browser | CSP (`script-src 'self'`), `X-Content-Type-Options: nosniff`, output is JSON-only (no server-rendered HTML from user input) | Mitigated |
 | Cross-origin requests | Tampering | A malicious site makes credentialed requests against the API using the victim's session cookie | Exact-match CORS origin check (no regex/wildcard), `SameSite=Lax` session cookie | Mitigated |
 | Session cookie | Tampering/CSRF | SameSite=Lax chosen over Strict — provides CSRF protection on all mutating methods (POST/PUT/PATCH/DELETE) while preserving usability for cross-site navigation. Strict would cause false logged-out states for legitimate users following external links. Trade-off documented and accepted. | Accepted |
+| Session with expired password | Elevation of Privilege | User with expired password accesses API directly bypassing frontend redirect | SessionGuard throws 403 with PASSWORD_EXPIRED code on all non-exempt paths | Mitigated |
 
 ## Residual risks / accepted risks
 
