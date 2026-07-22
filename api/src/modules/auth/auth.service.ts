@@ -14,6 +14,7 @@ import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto, LoginDto, RegisterDto, UpdateProfileDto } from './auth.dto';
+import { IpBlockService } from './ip-block.service';
 
 // Max failed attempts before an account is temporarily locked. OWASP ASVS
 // V2.2.1 recommends locking or heavily throttling after a small, fixed
@@ -61,7 +62,10 @@ export interface SafeUser {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ipBlockService: IpBlockService,
+  ) {}
 
   async register(dto: RegisterDto): Promise<{ id: string; email: string }> {
     const email = dto.email.toLowerCase();
@@ -98,6 +102,26 @@ export class AuthService {
     dto: LoginDto,
     ipAddress: string,
   ): Promise<{ userId: string; requiresMfa: boolean; role: string }> {
+    // Check IP block FIRST — before any DB work. A blocked IP is rejected
+    // outright regardless of whether the credentials it's presenting are
+    // even valid (see Test 2 in the IP-blocking test plan) - this is what
+    // stops a credential-stuffing run that rotates through valid-looking
+    // accounts once it's already tripped lockout on enough of them.
+    const isBlocked = await this.ipBlockService.isBlocked(ipAddress);
+    if (isBlocked) {
+      const ttl = await this.ipBlockService.getBlockTtl(ipAddress);
+      const minutesLeft = Math.ceil(ttl / 60);
+
+      await this.writeAuditLog(null, 'IP_BLOCKED_LOGIN_ATTEMPT', 'Auth', undefined, {
+        ipAddress,
+        minutesRemaining: minutesLeft,
+      });
+
+      throw new ForbiddenException(
+        `Too many failed attempts from this location. Try again in ${minutesLeft} minute(s).`,
+      );
+    }
+
     const captchaSecret = process.env.CAPTCHA_SECRET_KEY;
 
     if (captchaSecret) {
@@ -508,6 +532,12 @@ export class AuthService {
       await this.writeAuditLog(userId, 'ACCOUNT_LOCKED', 'User', userId, { ip: ipAddress });
 
       this.logger.warn(`Account ${userId} locked until ${lockedUntil.toISOString()} after repeated failed logins`);
+
+      // Record this lockout against the IP - credential stuffing rotates
+      // accounts precisely to stay under any single account's lockout
+      // threshold, so this is tracked per-IP independently of the
+      // per-account counter above.
+      await this.ipBlockService.recordLockoutFromIp(ipAddress);
     }
   }
 

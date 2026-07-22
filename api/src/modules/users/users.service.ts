@@ -3,6 +3,7 @@ import * as argon2 from 'argon2';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { IpBlockService } from '../auth/ip-block.service';
 import { CreateUserDto, UpdateUserDto } from './users.dto';
 
 export interface SafeUser {
@@ -42,6 +43,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
+    private readonly ipBlockService: IpBlockService,
   ) {}
 
   async findAll(): Promise<SafeUser[]> {
@@ -169,6 +171,11 @@ export class UsersService {
     });
 
     await this.auditLog.write(actorId, 'ACCOUNT_UNLOCKED', 'User', id);
+  }
+
+  async unblockIp(ip: string, actorId: string): Promise<void> {
+    await this.ipBlockService.unblockIp(ip);
+    await this.auditLog.write(actorId, 'IP_UNBLOCKED', 'Auth', undefined, { ipAddress: ip });
   }
 
   // Argon2id, same params as AuthService.hashPassword() - see that

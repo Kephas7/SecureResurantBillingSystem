@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UsersService, SafeUser } from './users.service';
@@ -50,5 +50,23 @@ export class UsersController {
   async unlock(@Param('id') id: string, @CurrentUser() actorId: string): Promise<{ message: string }> {
     await this.usersService.unlockAccount(id, actorId);
     return { message: 'Account unlocked successfully' };
+  }
+
+  /**
+   * POST /users/ip-blocks/:ip/unblock
+   * Admin-only: manually unblock an IP address.
+   */
+  @Post('ip-blocks/:ip/unblock')
+  @HttpCode(HttpStatus.OK)
+  async unblockIp(@Param('ip') ip: string, @CurrentUser() actorId: string): Promise<{ message: string }> {
+    // Basic IP format validation to prevent path traversal in the Redis key
+    const ipRegex = /^[\d.:a-fA-F]+$/;
+    if (!ipRegex.test(ip)) {
+      throw new BadRequestException('Invalid IP address format');
+    }
+
+    await this.usersService.unblockIp(ip, actorId);
+
+    return { message: `IP ${ip} has been unblocked` };
   }
 }
