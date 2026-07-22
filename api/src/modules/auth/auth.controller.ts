@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -11,6 +11,7 @@ import {
   RegisterDto,
   RequestPasswordResetDto,
   ResetPasswordDto,
+  UpdateProfileDto,
   VerifyMfaDto,
 } from './auth.dto';
 
@@ -30,6 +31,48 @@ export class AuthController {
     }
 
     return this.authService.getMe(userId);
+  }
+
+  /**
+   * GET /auth/profile
+   * Returns the current user's own profile data.
+   * Same as /auth/me but explicitly named for profile use.
+   */
+  @HttpCode(HttpStatus.OK)
+  @Get('profile')
+  async getProfile(@CurrentUser() userId: string | null): Promise<SafeUser> {
+    if (!userId) {
+      throw new UnauthorizedException('Authentication required');
+    }
+
+    return this.authService.getMe(userId);
+  }
+
+  /**
+   * PATCH /auth/profile
+   *
+   * SECURITY: Users can only edit their OWN profile.
+   * They cannot change their role, email, or isActive status
+   * through this endpoint - those fields are Admin-only (see
+   * UsersController). The DTO whitelist prevents mass assignment
+   * of sensitive fields (whitelist:true + forbidNonWhitelisted:true
+   * in the global ValidationPipe rejects any attempt to send
+   * role/email/isActive outright, rather than silently dropping
+   * them). There is also no userId in the request body - the
+   * target is always the authenticated session's own user,
+   * never caller-supplied.
+   */
+  @HttpCode(HttpStatus.OK)
+  @Patch('profile')
+  async updateProfile(
+    @Body() dto: UpdateProfileDto,
+    @CurrentUser() userId: string | null,
+  ): Promise<SafeUser> {
+    if (!userId) {
+      throw new UnauthorizedException('Authentication required');
+    }
+
+    return this.authService.updateProfile(userId, dto);
   }
 
   @Public()

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { UtensilsCrossed, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { UtensilsCrossed, LogOut, PanelLeftClose, PanelLeftOpen, UserCircle } from "lucide-react";
 import { useAuth } from "../../context/auth.context";
 import { navSectionsForRole } from "../../lib/nav-items";
 import { roleBadgeClass } from "../../lib/roles";
@@ -117,20 +117,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               })}
             </div>
           ))}
+          <div>
+            <div className="sidebar-section">Account</div>
+            <Link
+              href="/profile"
+              className={`nav-link${pathname === "/profile" ? " active" : ""}`}
+              title="Profile"
+            >
+              <UserCircle size={16} />
+              <span className="nav-label">Profile</span>
+            </Link>
+          </div>
         </nav>
 
         <div className="sidebar-user">
-          <div className="sidebar-user-info">
-            <div className="avatar" title={`${user.fullName} (${user.role})`}>
-              {initials(user.fullName)}
-            </div>
+          <Link
+            href="/profile"
+            className="sidebar-user-info"
+            title={`${user.fullName} (${user.role}) - view profile`}
+            style={{ textDecoration: "none", color: "inherit" }}
+          >
+            <div className="avatar">{initials(user.fullName)}</div>
             {!collapsed && (
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="user-name">{user.fullName}</div>
                 <span className={`badge ${roleBadgeClass(user.role)}`}>{user.role}</span>
               </div>
             )}
-          </div>
+          </Link>
           <button type="button" className="btn btn-primary w-full" style={{ justifyContent: "center" }} onClick={() => void handleLogout()}>
             <LogOut size={16} />
             <span className="nav-label">Logout</span>

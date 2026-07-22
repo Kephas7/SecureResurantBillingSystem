@@ -13,7 +13,7 @@ import * as qrcode from 'qrcode';
 import * as crypto from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { ChangePasswordDto, LoginDto, RegisterDto } from './auth.dto';
+import { ChangePasswordDto, LoginDto, RegisterDto, UpdateProfileDto } from './auth.dto';
 
 // Max failed attempts before an account is temporarily locked. OWASP ASVS
 // V2.2.1 recommends locking or heavily throttling after a small, fixed
@@ -226,6 +226,26 @@ export class AuthService {
       passwordChangedAt: user.passwordChangedAt,
       createdAt: user.createdAt,
     };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto): Promise<SafeUser> {
+    // where: { id: userId } - always the caller's own session id, never a
+    // value from the request body, so there is no way to target another
+    // user's row through this endpoint (see UpdateProfileDto for the
+    // mass-assignment/self-escalation rationale on the field whitelist).
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.fullName && { fullName: dto.fullName }),
+      },
+      select: { id: true },
+    });
+
+    await this.writeAuditLog(userId, 'PROFILE_UPDATED', 'User', userId, {
+      updatedFields: Object.keys(dto),
+    });
+
+    return this.getMe(userId);
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {

@@ -47,6 +47,20 @@ export class LoginDto {
   captchaToken?: string;
 }
 
+// Deliberately limited to fullName only.
+// Email changes require Admin action (prevents self-escalation via
+// email change to an Admin-owned address). Role, isActive, mfaEnabled
+// are excluded entirely - there is no field here a self-edit could use
+// to touch any of them, and the global ValidationPipe's
+// forbidNonWhitelisted rejects a request that tries to sneak them in.
+export class UpdateProfileDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  @IsOptional()
+  fullName?: string;
+}
+
 export class ChangePasswordDto {
   @IsString()
   @IsNotEmpty()

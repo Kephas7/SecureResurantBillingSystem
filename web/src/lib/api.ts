@@ -69,7 +69,7 @@ apiClient.interceptors.response.use(
   },
 );
 
-interface MeResponse {
+export interface MeResponse {
   id: string;
   email: string;
   fullName: string;
@@ -122,6 +122,13 @@ export const authApi = {
     apiClient
       .post<{ message: string }>("/auth/reset-password", { token, newPassword })
       .then((res) => res.data),
+};
+
+export const profileApi = {
+  get: () => apiClient.get<MeResponse>("/auth/profile").then((res) => res.data),
+
+  update: (data: { fullName: string }) =>
+    apiClient.patch<MeResponse>("/auth/profile", data).then((res) => res.data),
 };
 
 export interface AdminUser {
